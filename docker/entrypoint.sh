@@ -36,6 +36,7 @@ Commands:
   test [pytest args]   run the test suite
   recorder [args]      record live order book (default: config/candidates.txt)
   module <name> [args] run any python module, e.g. module scripts.plot_quotes
+                       testnet trader: module mm.testnet --symbols BTCUSDT --policy join
   shell                open a shell inside the container
   <anything else>      run as a plain command, e.g. python -c "..."
 EOF
