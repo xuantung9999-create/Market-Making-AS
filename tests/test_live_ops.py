@@ -96,3 +96,26 @@ def test_supervisor_restarts_and_waits_for_keys(tmp_path, monkeypatch):
     sup.stop()
     assert json.loads((tmp_path / "data/live_status/supervisor.json").read_text())["stopped"] is True
     assert (tmp_path / "results/live_tn.log").exists()
+
+
+def test_dashboard_server_serves_only_dashboard(tmp_path):
+    import urllib.error
+    import urllib.request
+    from scripts.supervise_live import serve_dashboard
+    (tmp_path / "dashboard/live").mkdir(parents=True)
+    (tmp_path / "dashboard/index.html").write_text("hello")
+    (tmp_path / "dashboard/live/status.js").write_text("window.LIVE={};")
+    (tmp_path / ".env").write_text("SECRET=1")
+    httpd = serve_dashboard(tmp_path / "dashboard", 0)
+    port = httpd.server_address[1]
+    try:
+        assert urllib.request.urlopen(f"http://127.0.0.1:{port}/index.html").read() == b"hello"
+        r = urllib.request.urlopen(f"http://127.0.0.1:{port}/live/status.js")
+        assert r.headers["Cache-Control"] == "no-store"
+        try:
+            body = urllib.request.urlopen(f"http://127.0.0.1:{port}/../.env").read()
+        except urllib.error.HTTPError:
+            body = b""
+        assert b"SECRET" not in body
+    finally:
+        httpd.shutdown()

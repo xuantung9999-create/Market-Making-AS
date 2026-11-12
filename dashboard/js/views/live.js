@@ -39,6 +39,7 @@ function drawLiveHeader(L) {
     ["Testnet fills (24 h)", fmt(fills, 0), "", `${tn.length} symbol(s)`],
     ["Recorder streams live", rec.length ? `${recOk} / ${rec.length}` : "–", rec.length && recOk === rec.length ? "pos" : rec.length ? "neg" : "", "book updated in the last 3 min"],
     ["Page data", ageText((now - L.built_ms) / 1000) + " old", (now - L.built_ms) < 180000 ? "" : "neg", "refreshes every 30 s"],
+    ["Open on phone / laptop", sup && sup.dashboard_urls && sup.dashboard_urls.length ? `<span style="font-size:15px">${esc(sup.dashboard_urls[0].replace("http://", ""))}</span>` : "–", "", "same Wi-Fi as the PC"],
   ];
   fillHtml("live-tiles", tiles.map(t => `<div class="tile"><div class="k">${t[0]}</div><div class="v ${t[2]}">${t[1]}</div><div class="s">${t[3]}</div></div>`).join(""));
 

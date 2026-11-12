@@ -14,6 +14,11 @@ the wait resets once it has run for 10 minutes. Logs: results/live_<name>.log (r
 Ctrl+C: the testnet traders get a Ctrl+Break so they cancel their open orders, then everything stops.
 
 State for the dashboard: data/live_status/supervisor.json (process, pid, uptime, restarts, last exit).
+
+Dashboard over the home network: the supervisor also serves the dashboard/ folder (only that folder)
+on port 8765 (config "dashboard_port", 0 = off). Open http://<PC address>:8765 from any phone or laptop
+on the same Wi-Fi; the address is printed at start and shown on the PC status tab. Windows asks once
+to allow Python through the firewall: allow it on private networks.
 """
 from __future__ import annotations
 
@@ -24,6 +29,7 @@ import platform
 import signal
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -38,6 +44,7 @@ DEFAULT_CONFIG = {
         {"name": "testnet-agent", "symbols": ["ETHUSDT"], "policy": "agent"},
     ],
     "dashboard_every_s": 60,
+    "dashboard_port": 8765,
 }
 
 
@@ -46,6 +53,44 @@ def load_config(path: Path) -> dict:
         cfg = json.loads(path.read_text())
         return {**DEFAULT_CONFIG, **cfg}
     return dict(DEFAULT_CONFIG)
+
+
+def lan_addresses() -> list[str]:
+    """This machine's addresses on the local network (best effort, no packets sent)."""
+    import socket
+    ips = set()
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        ips.add(s.getsockname()[0])
+        s.close()
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ips.add(info[4][0])
+    except OSError:
+        pass
+    return sorted(ip for ip in ips if not ip.startswith("127."))
+
+
+def serve_dashboard(folder: Path, port: int):
+    """Serve ``folder`` (read-only static files) on all interfaces in a background thread."""
+    from functools import partial
+    from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+
+    class Quiet(SimpleHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def end_headers(self):
+            if self.path.startswith("/live/"):
+                self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
+    httpd = ThreadingHTTPServer(("0.0.0.0", port), partial(Quiet, directory=str(folder)))
+    threading.Thread(target=httpd.serve_forever, daemon=True, name="dashboard-http").start()
+    return httpd
 
 
 def keys_present(env_path: Path) -> bool:
@@ -91,6 +136,8 @@ class Supervisor:
         self.last_dash = 0.0
         self.last_keycheck = -1e9
         self.has_keys = False
+        self.httpd = None
+        self.urls: list[str] = []
 
     # ------------------------------------------------------------------ processes
     def _open_log(self, c: Child):
@@ -170,6 +217,7 @@ class Supervisor:
             "stopped": stopped,
             "host": platform.node(),
             "keys": self.has_keys,
+            "dashboard_urls": self.urls,
             "processes": [{"name": c.name, "running": c.running(), "pid": c.proc.pid if c.running() else None,
                            "uptime_s": round(now - c.started) if c.running() and c.started else None,
                            "restarts": c.restarts, "last_exit": c.last_exit, "last_exit_utc": c.last_exit_utc,
@@ -191,6 +239,14 @@ class Supervisor:
     def loop(self, hours: Optional[float] = None) -> None:
         end = None if hours is None else time.time() + hours * 3600
         every = float(self.cfg.get("dashboard_every_s", 60))
+        port = int(self.cfg.get("dashboard_port", 0) or 0)
+        if port:
+            try:
+                self.httpd = serve_dashboard(self.base / "dashboard", port)
+                self.urls = [f"http://{ip}:{port}" for ip in lan_addresses()] or [f"http://localhost:{port}"]
+                print(f"dashboard on your network: {'  '.join(self.urls)}  (same Wi-Fi; PC status tab)", flush=True)
+            except OSError as e:
+                print(f"dashboard server not started on port {port}: {e}", flush=True)
         print(f"supervisor running {', '.join(c.name for c in self.children)}. Ctrl+C to stop everything.", flush=True)
         try:
             while end is None or time.time() < end:
@@ -206,6 +262,8 @@ class Supervisor:
         finally:
             self.stop()
             self.refresh_dashboard()
+            if self.httpd:
+                self.httpd.shutdown()
             print("all stopped", flush=True)
 
 
