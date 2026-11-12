@@ -67,6 +67,20 @@ test bots, so fills and adverse selection look nothing like the real market. Jud
 the paper trader (`mm/paper.py`: real data, simulated fills); use testnet to prove the execution
 code. Only a few coins exist on testnet (BTC, ETH, BNB and some others), not the micro caps.
 
+## 24/7 mode (always-on PC)
+
+`run_24x7.bat` runs everything that should never stop, under one supervisor
+(`scripts/supervise_live.py`, configured in `config/live.json`):
+
+- the **order-book recorder** for every coin in `config/candidates.txt` (public mainnet data, no keys)
+- the **testnet traders**: by default BTCUSDT always quoting (`join`, plumbing) and ETHUSDT run by the agent
+- the dashboard's **PC status** tab, refreshed every minute (`scripts/build_live.py` → `dashboard/live/status.js`, not in git)
+
+Crashed processes restart by themselves (10 s, doubling to 5 min). The traders wait until `.env` holds the
+testnet keys, then start within a minute. Ctrl+C cancels open testnet orders before stopping.
+`install_autostart.bat` makes it start at every Windows login. Set Windows sleep to *Never*.
+Logs: `results/live_<process>.log`.
+
 ## Dashboard
 
 `dashboard/index.html` is an interactive, static dashboard: a live A-S simulator with sliders, model intuition charts, the paper replication, and the real BTCUSDT data analysis. Open the file in a browser (double-click), or host it free on GitHub Pages: Settings → Pages → deploy from the `main` branch, root folder; it is then at `https://<user>.github.io/<repo>/dashboard/`.

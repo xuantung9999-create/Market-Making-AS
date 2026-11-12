@@ -1,0 +1,223 @@
+"""24/7 supervisor: keeps the order-book recorder and the testnet traders running, restarts them
+if they crash, and refreshes the dashboard's Live tab every minute.
+
+    python -m scripts.supervise_live                  # uses config/live.json
+    run_24x7.bat                                      # same, plus first-time setup (Windows)
+
+What it runs (config/live.json):
+  recorder   python -m mm.recorder --symbols-file config/candidates.txt   (public data, no keys)
+  testnet    one python -m mm.testnet process per entry (needs .env with testnet keys; if the keys
+             are missing it waits and checks again every minute, the recorder keeps running)
+
+Restarts: a crashed process is restarted after 10 s, doubling up to 5 min while it keeps failing;
+the wait resets once it has run for 10 minutes. Logs: results/live_<name>.log (rotated at 20 MB).
+Ctrl+C: the testnet traders get a Ctrl+Break so they cancel their open orders, then everything stops.
+
+State for the dashboard: data/live_status/supervisor.json (process, pid, uptime, restarts, last exit).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import platform
+import signal
+import subprocess
+import sys
+import time
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Optional
+
+WIN = os.name == "nt"
+DEFAULT_CONFIG = {
+    "recorder": {"enabled": True, "symbols_file": "config/candidates.txt"},
+    "testnet": [
+        {"name": "testnet-join", "symbols": ["BTCUSDT"], "policy": "join"},
+        {"name": "testnet-agent", "symbols": ["ETHUSDT"], "policy": "agent"},
+    ],
+    "dashboard_every_s": 60,
+}
+
+
+def load_config(path: Path) -> dict:
+    if path.exists():
+        cfg = json.loads(path.read_text())
+        return {**DEFAULT_CONFIG, **cfg}
+    return dict(DEFAULT_CONFIG)
+
+
+def keys_present(env_path: Path) -> bool:
+    from mm.testnet import load_env
+    load_env(env_path)
+    return bool(os.environ.get("BINANCE_TESTNET_API_KEY") and os.environ.get("BINANCE_TESTNET_API_SECRET"))
+
+
+@dataclass
+class Child:
+    name: str
+    args: list
+    needs_keys: bool = False
+    proc: Optional[subprocess.Popen] = None
+    started: Optional[float] = None
+    restarts: int = 0
+    backoff: float = 10.0
+    next_start: float = 0.0
+    last_exit: Optional[int] = None
+    last_exit_utc: Optional[str] = None
+    waiting: str = ""
+    log: Optional[object] = field(default=None, repr=False)
+
+    def running(self) -> bool:
+        return self.proc is not None and self.proc.poll() is None
+
+
+class Supervisor:
+    def __init__(self, cfg: dict, base: Path = Path("."), python: str = sys.executable):
+        self.cfg, self.base, self.python = cfg, base, python
+        self.children: list[Child] = []
+        rec = cfg.get("recorder") or {}
+        if rec.get("enabled", True):
+            self.children.append(Child("recorder", ["-m", "mm.recorder", "--symbols-file", rec.get("symbols_file", "config/candidates.txt")]))
+        for t in cfg.get("testnet") or []:
+            args = ["-m", "mm.testnet", "--symbols", ",".join(t["symbols"]), "--policy", t.get("policy", "agent")]
+            for k, flag in (("lot_usd", "--lot-usd"), ("q_max", "--q-max"), ("max_loss", "--max-loss"), ("warmup", "--warmup")):
+                if k in t:
+                    args += [flag, str(t[k])]
+            self.children.append(Child(t.get("name", "testnet"), args, needs_keys=True))
+        self.started = time.time()
+        self.status_path = base / "data/live_status/supervisor.json"
+        self.last_dash = 0.0
+        self.last_keycheck = -1e9
+        self.has_keys = False
+
+    # ------------------------------------------------------------------ processes
+    def _open_log(self, c: Child):
+        p = self.base / "results" / f"live_{c.name}.log"
+        p.parent.mkdir(parents=True, exist_ok=True)
+        if p.exists() and p.stat().st_size > 20_000_000:
+            p.replace(p.with_suffix(".log.1"))
+        return open(p, "a", buffering=1)
+
+    def start(self, c: Child) -> None:
+        c.log = self._open_log(c)
+        c.log.write(f"\n=== {datetime.now(timezone.utc):%Y-%m-%d %H:%M:%S} UTC start: {' '.join(c.args)} ===\n")
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP if WIN else 0
+        env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+        c.proc = subprocess.Popen([self.python, *c.args], cwd=self.base, stdout=c.log, stderr=subprocess.STDOUT,
+                                  env=env, creationflags=flags)
+        c.started, c.waiting = time.time(), ""
+        print(f"[{time.strftime('%H:%M:%S')}] started {c.name} (pid {c.proc.pid})", flush=True)
+
+    def check(self, now: float) -> None:
+        if now - self.last_keycheck >= 60:
+            self.has_keys = keys_present(self.base / ".env")
+            self.last_keycheck = now
+        for c in self.children:
+            if c.running():
+                if now - (c.started or now) > 600:
+                    c.backoff = 10.0
+                continue
+            if c.proc is not None:                       # it exited
+                c.last_exit = c.proc.returncode
+                c.last_exit_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                c.proc = None
+                if c.log:
+                    c.log.close()
+                c.restarts += 1
+                c.next_start = now + c.backoff
+                print(f"[{time.strftime('%H:%M:%S')}] {c.name} exited with code {c.last_exit}; "
+                      f"restart in {c.backoff:.0f}s (see results/live_{c.name}.log)", flush=True)
+                c.backoff = min(c.backoff * 2, 300.0)
+            if c.needs_keys and not self.has_keys:
+                c.waiting = "waiting for testnet keys in .env"
+                continue
+            if now >= c.next_start:
+                self.start(c)
+
+    def stop(self) -> None:
+        for c in self.children:
+            if c.running() and c.needs_keys:              # let traders cancel their orders
+                try:
+                    c.proc.send_signal(signal.CTRL_BREAK_EVENT if WIN else signal.SIGINT)
+                except (OSError, ValueError):
+                    pass
+        deadline = time.time() + 25
+        for c in self.children:
+            if c.running() and c.needs_keys:
+                try:
+                    c.proc.wait(timeout=max(0.1, deadline - time.time()))
+                except subprocess.TimeoutExpired:
+                    pass
+        for c in self.children:
+            if c.running():
+                c.proc.terminate()
+                try:
+                    c.proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    c.proc.kill()
+            if c.log:
+                c.log.close()
+        self.write_status(stopped=True)
+
+    # ------------------------------------------------------------------ status and dashboard
+    def write_status(self, stopped: bool = False) -> dict:
+        now = time.time()
+        st = {
+            "updated_ms": int(now * 1000),
+            "since_ms": int(self.started * 1000),
+            "stopped": stopped,
+            "host": platform.node(),
+            "keys": self.has_keys,
+            "processes": [{"name": c.name, "running": c.running(), "pid": c.proc.pid if c.running() else None,
+                           "uptime_s": round(now - c.started) if c.running() and c.started else None,
+                           "restarts": c.restarts, "last_exit": c.last_exit, "last_exit_utc": c.last_exit_utc,
+                           "waiting": c.waiting, "cmd": " ".join(c.args)} for c in self.children],
+        }
+        self.status_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.status_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(st, indent=1))
+        tmp.replace(self.status_path)
+        return st
+
+    def refresh_dashboard(self) -> None:
+        try:
+            from scripts.build_live import build
+            build(self.base)
+        except Exception as e:                            # noqa: BLE001 - never let the dashboard stop trading
+            print(f"dashboard refresh failed: {e!r}", flush=True)
+
+    def loop(self, hours: Optional[float] = None) -> None:
+        end = None if hours is None else time.time() + hours * 3600
+        every = float(self.cfg.get("dashboard_every_s", 60))
+        print(f"supervisor running {', '.join(c.name for c in self.children)}. Ctrl+C to stop everything.", flush=True)
+        try:
+            while end is None or time.time() < end:
+                now = time.time()
+                self.check(now)
+                if now - self.last_dash >= every:
+                    self.write_status()
+                    self.refresh_dashboard()
+                    self.last_dash = now
+                time.sleep(5)
+        except KeyboardInterrupt:
+            print("stopping: cancelling testnet orders, then closing everything...", flush=True)
+        finally:
+            self.stop()
+            self.refresh_dashboard()
+            print("all stopped", flush=True)
+
+
+def _main(argv=None) -> None:
+    ap = argparse.ArgumentParser(prog="python -m scripts.supervise_live")
+    ap.add_argument("--config", default="config/live.json")
+    ap.add_argument("--hours", type=float, default=None)
+    args = ap.parse_args(argv)
+    if WIN and hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
+    Supervisor(load_config(Path(args.config))).loop(args.hours)
+
+
+if __name__ == "__main__":
+    _main()

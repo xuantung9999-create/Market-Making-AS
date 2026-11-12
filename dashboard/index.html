@@ -171,6 +171,8 @@ nav.tabs .nav-sep { width: 1px; background: var(--line); margin: 8px 10px; flex:
 .chart.small { height: 230px; }
 .pending { border: 1px dashed var(--line); border-radius: var(--r); padding: 18px; color: var(--muted); }
 .pending b { color: var(--text); font-weight: 500; }
+#live-fills, #live-events { max-height: 560px; overflow-y: auto; }
+.live-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 4px; vertical-align: middle; }
 td.flag-on { color: var(--warn); }
 .spark { display: block; }
 table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body); }
@@ -200,6 +202,9 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
   </div>
   <div class="demo-banner" id="demo-banner" hidden>DEMO DATA, NOT RESULTS · synthetic numbers for building and checking the page</div>
   <nav class="tabs" aria-label="Sections">
+    <span class="nav-group">Live</span>
+    <a href="#live" data-view="live">PC status</a>
+    <span class="nav-sep" aria-hidden="true"></span>
     <span class="nav-group">Desk</span>
     <a href="#overview" data-view="overview">Overview</a>
     <a href="#pnl" data-view="pnl">P&amp;L</a>
@@ -225,6 +230,27 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
 </header>
 
 <main>
+  <!-- ============================== LIVE ============================== -->
+  <section class="view" id="view-live">
+    <p class="desk-msg" id="live-msg" hidden></p>
+    <div id="live-body">
+      <p class="view-intro">What the 24/7 PC is doing right now: the supervisor, the testnet traders (real post-only orders on the Binance spot testnet, <b>fake money</b>) and the order-book recorder. Refreshes every 30 s. Testnet P&amp;L checks the execution code; it is not evidence of an edge, because the testnet book is thin and moved by test bots. All times UTC.</p>
+      <div class="tiles" id="live-tiles"></div>
+      <div class="card" style="margin-bottom:16px"><h2>Processes</h2><p class="sub">Started and restarted by scripts/supervise_live.py; logs in results/live_&lt;name&gt;.log</p><div class="table-wrap" id="live-procs"></div></div>
+      <div class="card" style="margin-bottom:16px"><h2>Testnet blotter</h2><p class="sub">Real position from detected fills; P&amp;L marked to mid, after estimated 10 bp maker fees</p><div class="table-wrap" id="live-tn-table"></div></div>
+      <div class="grid g2">
+        <div class="card"><h2>Testnet P&amp;L</h2><p class="sub">USDT after each fill, last 7 days</p><div class="chart" id="live-pnl"></div></div>
+        <div class="card"><h2>Testnet position</h2><p class="sub">Base units held after each fill</p><div class="chart" id="live-pos"></div></div>
+      </div>
+      <div class="card" style="margin-top:16px"><h2>Order activity</h2><p class="sub">Per UTC hour, last 24 h, all testnet symbols. Many rejects = quotes that would have crossed the book (post-only)</p><div class="chart" id="live-activity"></div></div>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><h2>Last fills</h2><p class="sub">Edge vs mid: positive = filled on the good side of the mid at detection</p><div class="table-wrap" id="live-fills"></div></div>
+        <div class="card"><h2>Order events</h2><p class="sub">Last 40 places, cancels, rejects and stops</p><div class="table-wrap" id="live-events"></div></div>
+      </div>
+      <div class="card" style="margin-top:16px"><h2>Order-book recorder</h2><p class="sub">Mainnet best bid/ask and trades for config/candidates.txt, written every minute to data/live. Green = written in the last 3 min. A gap is more than 3 min between files (PC asleep, network down, restart)</p><div class="table-wrap" id="live-rec"></div></div>
+    </div>
+  </section>
+
   <!-- ============================== DESK ============================== -->
   <section class="view" id="view-overview">
     <p class="desk-msg" id="desk-msg-overview" hidden></p>
@@ -542,6 +568,7 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
 <script src="js/views/risk.js"></script>
 <script src="js/views/model.js"></script>
 <script src="js/views/desk_pending.js"></script>
+<script src="js/views/live.js"></script>
 <script>boot();</script>
 </body>
 </html>

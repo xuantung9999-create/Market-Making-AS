@@ -3,7 +3,7 @@
 /* ---------- Edit these for your CV / website ---------- */
 const SITE = {
   stage: "v2 · Gate A evaluated",
-  testsPassed: 181,
+  testsPassed: 197,
   author: "Xuân Tùng",
   github: "",      // e.g. "https://github.com/your-name/as-market-maker"
   linkedin: "",    // e.g. "https://www.linkedin.com/in/your-name"
@@ -26,6 +26,7 @@ const ROADMAP = [
   ["v2 0–8", "done", "Queue engine, coin screener, edge table, self-calibrating agent; first honest test: join-the-best loses once the queue is modelled"],
   ["v2 9–11", "done", "Tape check against the real book, paper trader, daily supervisor (built and tested; waiting for live data)"],
   ["Gate A", "done", "60-day walk-forward: FAIL, the agent found no edge and stayed out (pre-registered, not tuned)"],
+  ["Testnet", "done", "Testnet trader: the agent sends real post-only orders on the Binance spot testnet (fake money); 24/7 supervisor on the home PC"],
   ["Live data", "next", "Record the real order book for 3+ days; validate the inferred book; re-test with book imbalance"],
   ["Gate B", "todo", "Paper trading only if a re-test passes Gate A"],
   ["Write-up", "todo", "Write-up and release"],

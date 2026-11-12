@@ -46,6 +46,7 @@ import json
 import math
 import os
 import shutil
+import signal
 import time
 import urllib.error
 import urllib.parse
@@ -506,6 +507,8 @@ def _main(argv=None) -> None:
     ap.add_argument("--env", default=".env")
     args = ap.parse_args(argv)
 
+    if hasattr(signal, "SIGBREAK"):          # Windows: the supervisor's Ctrl+Break -> clean shutdown
+        signal.signal(signal.SIGBREAK, signal.default_int_handler)
     syms = read_symbols_file(args.symbols_file) if args.symbols_file else args.symbols.split(",")
     syms = [s.strip().upper() for s in syms if s.strip()]
     load_env(args.env)
