@@ -72,7 +72,8 @@ def testnet_url(symbols: list[str]) -> str:
 
 # ---------------------------------------------------------------------- keys
 def load_env(path: str | Path = ".env") -> None:
-    """Minimal .env reader (KEY=VALUE lines). Existing environment variables win."""
+    """Minimal .env reader (KEY=VALUE lines). A non-empty environment variable wins; an empty
+    one is filled from the file, so keys added to .env after start-up are picked up."""
     p = Path(path)
     if not p.exists():
         return
@@ -81,7 +82,9 @@ def load_env(path: str | Path = ".env") -> None:
         if not line or line.startswith("#") or "=" not in line:
             continue
         k, v = line.split("=", 1)
-        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+        k, v = k.strip(), v.strip().strip('"').strip("'")
+        if not os.environ.get(k):
+            os.environ[k] = v
 
 
 # ---------------------------------------------------------------------- REST client

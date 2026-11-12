@@ -76,6 +76,10 @@ def test_supervisor_restarts_and_waits_for_keys(tmp_path, monkeypatch):
     sup.check(time.time())
     assert not crash.running() and "keys" in crash.waiting          # no .env -> not started
 
+    (tmp_path / ".env").write_text("BINANCE_TESTNET_API_KEY=\nBINANCE_TESTNET_API_SECRET=\n")
+    sup.last_keycheck = -1e9
+    sup.check(time.time())
+    assert crash.proc is None                                         # empty keys still wait
     (tmp_path / ".env").write_text("BINANCE_TESTNET_API_KEY=k\nBINANCE_TESTNET_API_SECRET=s\n")
     sup.last_keycheck = -1e9
     sup.check(time.time())

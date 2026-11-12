@@ -171,6 +171,19 @@ def test_load_env(tmp_path, monkeypatch):
     assert os.environ["BINANCE_TESTNET_API_KEY"] == "abc"
 
 
+def test_load_env_fills_keys_added_later(tmp_path, monkeypatch):
+    """Supervisor starts with an empty .env, the user pastes keys later: they must be picked up."""
+    import os
+    monkeypatch.delenv("BINANCE_TESTNET_API_KEY", raising=False)
+    p = tmp_path / ".env"
+    p.write_text("BINANCE_TESTNET_API_KEY=\n")
+    load_env(p)
+    assert os.environ["BINANCE_TESTNET_API_KEY"] == ""
+    p.write_text("BINANCE_TESTNET_API_KEY=later\n")
+    load_env(p)
+    assert os.environ["BINANCE_TESTNET_API_KEY"] == "later"
+
+
 def _feed(session, sym, t_s, bid, ask, trade=None):
     us = int(t_s * 1e6)
     session.handle(json.dumps({"stream": f"{sym.lower()}@bookTicker",
