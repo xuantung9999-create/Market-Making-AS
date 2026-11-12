@@ -40,6 +40,33 @@ python -m scripts.book_study       # day 10: live order book from the recorder
 python -m mm.recorder --symbol BTCUSDT          # live best bid/ask + trades, Ctrl+C to stop
 ```
 
+## Testnet trading (real orders, fake money)
+
+`mm/testnet.py` runs the same self-calibrating agent as the paper trader, but sends its quotes as
+real `LIMIT_MAKER` (post-only) orders to the Binance **spot testnet**. It checks that orders are
+placed, replaced, filled, counted and cancelled correctly before any real money is involved.
+
+1. Get keys: https://testnet.binance.vision → log in with GitHub → *Generate HMAC_SHA256 Key*.
+2. Copy `.env.example` to `.env` and paste the key and secret (`.env` is git-ignored).
+3. Run it: double-click `run_testnet.bat`, or
+
+```bash
+python -m mm.testnet --symbols BTCUSDT --dry-run --hours 0.1   # testnet data, orders only logged
+python -m mm.testnet --symbols BTCUSDT --policy join            # always quote best bid/ask: plumbing test
+python -m mm.testnet --symbols BTCUSDT                          # the agent (quotes only when it sees edge)
+docker compose --profile live up testnet                        # same as --policy join, in Docker
+```
+
+Guards work on the **real** position: inventory cap (`--q-max` lots of `--lot-usd`), spot balance,
+daily loss stop (`--max-loss`), and every open order is cancelled on exit. The agent's simulated
+live track is given the real inventory before each decision. Logs: `data/testnet/<SYMBOL>/`
+(`orders_*.jsonl`, `fills_*.jsonl`, `status.json`).
+
+**Do not read testnet P&L as a result.** The testnet book is thin and moved by other people's
+test bots, so fills and adverse selection look nothing like the real market. Judge the model with
+the paper trader (`mm/paper.py`: real data, simulated fills); use testnet to prove the execution
+code. Only a few coins exist on testnet (BTC, ETH, BNB and some others), not the micro caps.
+
 ## Dashboard
 
 `dashboard/index.html` is an interactive, static dashboard: a live A-S simulator with sliders, model intuition charts, the paper replication, and the real BTCUSDT data analysis. Open the file in a browser (double-click), or host it free on GitHub Pages: Settings → Pages → deploy from the `main` branch, root folder; it is then at `https://<user>.github.io/<repo>/dashboard/`.
@@ -66,7 +93,8 @@ mm/calibrate.py       per-coin tick, spread, sigma, A, k, two-part (core/tail) f
 mm/flow.py            past-only flow features (imbalance, momentum, vol ratio, sweeps) and the alpha model
 mm/protect.py         A-S or GLFT with defences: lean on predicted flow, kill switch; matches mm.strategy.quote
 mm/metrics.py         P&L per volume, markouts, adverse selection, Sharpe, drawdown
-mm/live.py            (D12) paper trader
+mm/paper.py           paper trader: live mainnet data, simulated fills, no orders sent
+mm/testnet.py         testnet trader: the same agent, real post-only orders on the Binance spot testnet
 notes/derivation.md   Day 1 derivation of the model
 dashboard/index.html  interactive dashboard (data in dashboard/data.js, built by scripts/build_dashboard.py)
 ```

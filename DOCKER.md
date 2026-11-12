@@ -27,6 +27,7 @@ The first run builds the image (2–4 minutes). Later runs start in seconds.
 | Record live Binance order books (runs in background) | `docker compose --profile live up -d recorder` |
 | Stop the recorder | `docker compose --profile live down` |
 | Recorder logs | `docker compose logs -f recorder` |
+| Testnet trader (needs `.env` with testnet keys, see README) | `docker compose --profile live up testnet` |
 | Run any script | `docker compose run --rm mm module scripts.plot_quotes` |
 | Shell inside the container | `docker compose run --rm mm shell` |
 | List commands | `docker compose run --rm mm help` |
