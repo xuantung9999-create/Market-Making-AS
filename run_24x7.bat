@@ -20,6 +20,8 @@ if not exist "%VPY%" (
   "%VPY%" -m pip install -q --upgrade pip
   "%VPY%" -m pip install -q -r requirements.txt || (echo pip install failed, see the messages above & pause & exit /b 1)
 )
+echo Checking packages...
+"%VPY%" -m pip install -q --disable-pip-version-check -r requirements.txt
 if not exist .env if exist .env.example copy .env.example .env >nul
 :again
 "%VPY%" -m scripts.supervise_live

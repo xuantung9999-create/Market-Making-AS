@@ -510,6 +510,11 @@ def _main(argv=None) -> None:
     ap.add_argument("--env", default=".env")
     args = ap.parse_args(argv)
 
+    try:                                     # verify TLS with the OS certificate store (Windows Python
+        import truststore                    # otherwise misses the testnet's intermediate certificate)
+        truststore.inject_into_ssl()
+    except ImportError:
+        pass
     if hasattr(signal, "SIGBREAK"):          # Windows: the supervisor's Ctrl+Break -> clean shutdown
         signal.signal(signal.SIGBREAK, signal.default_int_handler)
     syms = read_symbols_file(args.symbols_file) if args.symbols_file else args.symbols.split(",")
