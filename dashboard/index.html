@@ -176,71 +176,101 @@ td.flag-on { color: var(--warn); }
 table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body); }
 .mark { font: 600 11px var(--font-mono); padding: 2px 8px; border-radius: 999px; }
 .mark.pass { color: #22c55e; background: #0f2e1c; } .mark.fail { color: #ef4444; background: #341214; } .mark.na { color: var(--muted); background: var(--panel-2); }
+
+/* ---------- Redesign shell: one-line bar, 11 tabs, sub-tabs ---------- */
+header { padding: 0 max(16px, 4vw); background: #0c131d; }
+.bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; min-height: 48px; }
+.brand { font: 600 15px var(--font-mono); letter-spacing: .06em; }
+.bar-run { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.bar-run select { max-width: 280px; }
+.bar-verdict { margin: 0; flex: 1 1 320px; text-align: right; font: 500 13px var(--font-mono); color: var(--text); }
+body.verdict-mode .bar-run, body.verdict-mode .runbar, body.verdict-mode #run-badge, body.verdict-mode #bar-verdict { display: none !important; }
+.runbar { margin: 4px 0 8px; }
+.tab-wrap > .subtabs { display: none; }
+.tab-wrap.active > .subtabs { display: flex; gap: 0; margin: 0 0 16px; flex-wrap: wrap; }
+.subtabs a { padding: 6px 14px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500; background: var(--panel); }
+.subtabs a:first-child { border-radius: 8px 0 0 8px; } .subtabs a:last-child { border-radius: 0 8px 8px 0; } .subtabs a + a { border-left: 0; }
+.subtabs a[aria-current="page"] { color: var(--accent); border-color: var(--accent); background: #0c2433; }
+.about-head { max-width: 78ch; margin-bottom: 14px; }
+.verdict-line { font-size: 17px; margin: 0 0 16px; max-width: 90ch; }
+.chart.forest { height: 460px; }
+.note.cap { margin: 4px 0 8px; }
 </style>
 </head>
 <body>
 <header>
-  <div class="head-row">
-    <div>
-      <div class="eyebrow">Quant research project · crypto market making</div>
-      <h1>Avellaneda–Stoikov Market Maker</h1>
-      <p class="lede">The 2008 Avellaneda–Stoikov model built from scratch in Python: an optimal quoting rule for a market maker who earns the spread but must control inventory risk. Replicated on simulated markets, then calibrated and backtested on real Binance trade data for twelve coins, from BTC to micro caps.</p>
-    </div>
-    <div class="chips" id="chips"></div>
-  </div>
-  <div class="headline" id="headline"></div>
-  <div class="runbar" aria-label="Run selection">
-    <label>Run <select id="run-select"></select></label>
+  <div class="bar">
+    <div class="brand">MM-AS</div>
+    <label class="bar-run">Run <select id="run-select"></select></label>
     <span id="run-badge"></span>
+    <label class="bar-run">Symbol <select id="f-symbol"></select></label>
+    <p class="bar-verdict" id="bar-verdict" aria-live="polite"></p>
+  </div>
+  <div class="runbar" aria-label="Run options">
     <span class="run-meta" id="run-meta"></span>
+    <label>Variant <select id="f-variant"></select></label>
     <label>Compare with <select id="run-compare"></select></label>
     <span id="compare-badge"></span>
-    <label>Symbol <select id="f-symbol"></select></label>
-    <label>Variant <select id="f-variant"></select></label>
   </div>
   <div class="demo-banner" id="demo-banner" hidden>DEMO DATA, NOT RESULTS · synthetic numbers for building and checking the page</div>
   <nav class="tabs" aria-label="Sections">
-    <span class="nav-group">Desk</span>
-    <a href="#overview" data-view="overview">Overview</a>
+    <a href="#overview" data-view="overview">Verdict</a>
+    <a href="#live" data-view="live">Live</a>
+    <a href="#book" data-view="book">Market book</a>
     <a href="#pnl" data-view="pnl">P&amp;L</a>
     <a href="#execution" data-view="execution">Execution</a>
     <a href="#risk" data-view="risk">Risk</a>
     <a href="#model-health" data-view="model-health">Model</a>
-    <a href="#signals" data-view="signals">Signals</a>
-    <a href="#market" data-view="market">Market</a>
-    <a href="#simlive" data-view="simlive">Sim vs live</a>
-    <a href="#health" data-view="health">Data health</a>
-    <span class="nav-sep" aria-hidden="true"></span>
-    <span class="nav-group">Research</span>
+    <a href="#data" data-view="data">Data</a>
     <a href="#simulator" data-view="simulator">Simulator</a>
-    <a href="#model" data-view="model">How the model quotes</a>
-    <a href="#replication" data-view="replication">Paper replication</a>
-    <a href="#real-data" data-view="real-data">Real market data</a>
-    <a href="#backtest" data-view="backtest">Backtest</a>
-    <a href="#universe" data-view="universe">BTC to micro caps</a>
-    <a href="#informed" data-view="informed">Informed traders</a>
-    <a href="#tuning" data-view="tuning">Tuning and signals</a>
-    <a href="#about" data-view="about">About the project</a>
+    <a href="#archive" data-view="archive">Research archive</a>
+    <a href="#about" data-view="about">About</a>
   </nav>
 </header>
 
 <main>
-  <!-- ============================== DESK ============================== -->
+  <div class="tab-wrap" data-tab="overview">
   <section class="view" id="view-overview">
     <p class="desk-msg" id="desk-msg-overview" hidden></p>
     <div id="desk-body-overview">
-      <p class="view-intro">Am I making money, on what, and is anything wrong right now? Net P&amp;L is after maker fees. Statistics count only days with 20 or more fills. All times UTC.</p>
+      <p class="verdict-line" id="ov-headline" hidden></p>
       <div class="tiles" id="ov-tiles"></div>
-      <div class="card" style="margin-bottom:16px">
-        <div class="card-head"><div><h2>Blotter</h2><p class="sub">One row per coin for the selected variant. Inventory is at the end of the last day.</p></div></div>
-        <div class="table-wrap" id="ov-blotter"></div>
+      <div class="grid g2" style="margin-bottom:16px">
+        <div class="card"><h2>Net edge by coin and queue assumption</h2><p class="sub" id="ov-forest-sub"></p><div class="chart forest" id="ov-forest"></div></div>
+        <div class="card"><h2>Gate scoreboard</h2><p class="sub" id="ov-gates-sub"></p><div class="table-wrap" id="ov-gates"></div></div>
       </div>
-      <div class="grid g2">
-        <div class="card"><h2>Cumulative net P&amp;L</h2><p class="sub">USD after fees, per coin and in total</p><div class="chart" id="ov-cum"></div></div>
-        <div class="card"><h2>Gate scoreboard</h2><p class="sub">Pre-registered pass/fail conditions before real money (Build Guide Tasks 8 and 11)</p><div class="table-wrap" id="ov-gates"></div></div>
-      </div>
+      <div class="card" style="margin-bottom:16px"><h2>Cumulative net P&amp;L</h2><p class="sub" id="ov-cum-sub"></p><div class="chart" id="ov-cum"></div></div>
+      <div class="card"><h2>Blotter</h2><p class="sub">One row per coin and scenario. Net and before-fees edge in bp per dollar traded; P&amp;L per 100 USD lot. Agent rows with no fills show dashes.</p><div class="table-wrap" id="ov-blotter"></div></div>
     </div>
   </section>
+  </div>
+
+  <div class="tab-wrap" data-tab="live">
+  <section class="view" id="view-live">
+    <p class="desk-msg" id="desk-msg-live" hidden></p>
+    <div id="desk-body-live">
+      <div class="pending"><b>Live monitor.</b> Heartbeat, paper and testnet status appear here once the recorder is running and the page is served over http (Dashboard Redesign Task R7).</div>
+    </div>
+  </section>
+  </div>
+
+  <div class="tab-wrap" data-tab="book">
+  <div class="subtabs" id="sub-book" role="tablist"></div>
+  <section class="view" id="view-book">
+    <p class="desk-msg" id="desk-msg-book" hidden></p>
+    <div id="desk-body-book">
+      <div class="pending"><b>Order book.</b> Best bid and ask, size at the touch, imbalance and next-move statistics from the recorded book (Dashboard Redesign Tasks R5 and R6).</div>
+    </div>
+  </section>
+  <section class="view" id="view-market">
+    <p class="desk-msg" id="desk-msg-market" hidden></p>
+    <div id="desk-body-market">
+      <div class="pending"><b>Next on the build list (Task D10).</b> What is the coin universe doing? The screener with tick size, spread, volume and volatility per coin.</div>
+    </div>
+  </section>
+  </div>
+
+  <div class="tab-wrap" data-tab="pnl">
   <section class="view" id="view-pnl">
     <p class="desk-msg" id="desk-msg-pnl" hidden></p>
     <div id="desk-body-pnl">
@@ -255,6 +285,9 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="card" style="margin-top:16px"><h2>Distribution of daily P&amp;L</h2><p class="sub">Counted days; dotted line at zero, solid line at the mean</p><div class="chart" id="pnl-hist"></div></div>
     </div>
   </section>
+  </div>
+
+  <div class="tab-wrap" data-tab="execution">
   <section class="view" id="view-execution">
     <p class="desk-msg" id="desk-msg-execution" hidden></p>
     <div id="desk-body-execution">
@@ -267,6 +300,9 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="card" style="margin-top:16px"><h2>Fill quality per coin</h2><p class="sub">Fill-weighted over the selected days</p><div class="table-wrap" id="ex-table"></div></div>
     </div>
   </section>
+  </div>
+
+  <div class="tab-wrap" data-tab="risk">
   <section class="view" id="view-risk">
     <p class="desk-msg" id="desk-msg-risk" hidden></p>
     <div id="desk-body-risk">
@@ -280,6 +316,10 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="card" style="margin-top:16px"><h2>Stress</h2><p class="sub">Loss if the price gaps against a full position</p><div class="table-wrap" id="rk-stress"></div></div>
     </div>
   </section>
+  </div>
+
+  <div class="tab-wrap" data-tab="model-health">
+  <div class="subtabs" id="sub-model-health" role="tablist"></div>
   <section class="view" id="view-model-health">
     <p class="desk-msg" id="desk-msg-model-health" hidden></p>
     <div id="desk-body-model-health">
@@ -298,10 +338,14 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="pending"><b>Next on the build list (Task D9).</b> Do the inputs still predict? Net edge by book-imbalance and volatility bucket.</div>
     </div>
   </section>
-  <section class="view" id="view-market">
-    <p class="desk-msg" id="desk-msg-market" hidden></p>
-    <div id="desk-body-market">
-      <div class="pending"><b>Next on the build list (Task D10).</b> What is the coin universe doing? The screener with tick size, spread, volume and volatility per coin.</div>
+  </div>
+
+  <div class="tab-wrap" data-tab="data">
+  <div class="subtabs" id="sub-data" role="tablist"></div>
+  <section class="view" id="view-health">
+    <p class="desk-msg" id="desk-msg-health" hidden></p>
+    <div id="desk-body-health">
+      <div class="pending"><b>Next on the build list (Task D10).</b> Can I trust what I am looking at? Recorder coverage and gaps, feed delay, bundle age and tests passed.</div>
     </div>
   </section>
   <section class="view" id="view-simlive">
@@ -310,14 +354,10 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="pending"><b>Next on the build list (Task D11).</b> Does the simulator match reality? Two runs side by side, overlaid P&amp;L and markouts, and a consistency verdict.</div>
     </div>
   </section>
-  <section class="view" id="view-health">
-    <p class="desk-msg" id="desk-msg-health" hidden></p>
-    <div id="desk-body-health">
-      <div class="pending"><b>Next on the build list (Task D10).</b> Can I trust what I am looking at? Recorder coverage and gaps, feed delay, bundle age and tests passed.</div>
-    </div>
-  </section>
+  </div>
 
-  <!-- ============================== SIMULATOR ============================== -->
+  <div class="tab-wrap" data-tab="simulator">
+  <div class="subtabs" id="sub-simulator" role="tablist"></div>
   <section class="view" id="view-simulator">
     <p class="view-intro">Simulated market from the paper: the mid price moves randomly and each quote fills with probability <span class="mono">A·e<sup>−kδ</sup>·dt</span>, where δ is its distance from the mid. The <b style="color:var(--accent)">A-S strategy</b> centres its quotes on an inventory-adjusted price; the <b style="color:var(--bench)">benchmark</b> uses the same spread centred on the mid. Both run on the same random numbers, so differences come from the strategy, not luck. Move a slider and every chart recomputes in your browser.</p>
     <div class="with-controls">
@@ -363,8 +403,6 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       </div>
     </div>
   </section>
-
-  <!-- ============================== MODEL ============================== -->
   <section class="view" id="view-model">
     <p class="view-intro">The two formulas that drive every quote, drawn with the parameters from the Simulator tab. Change them there and these update too.</p>
     <div class="grid g2" style="margin-bottom:16px">
@@ -382,8 +420,6 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="card"><h2>Fill probability per step vs distance</h2><p class="sub">P(fill in dt) = A·e<sup>−kδ</sup>·dt, capped at 1. Markers show where the current t = 0 quotes sit for q = 0.</p><div class="chart" id="ch-fill"></div></div>
     </div>
   </section>
-
-  <!-- ============================== REPLICATION ============================== -->
   <section class="view" id="view-replication">
     <p class="view-intro">Monte Carlo replication of section 4 of Avellaneda &amp; Stoikov (2008), computed in Python (<span class="mono">mm/simulator.py</span>), 1,000 paths per cell, both strategies on identical random numbers.</p>
     <div class="callout" id="rep-callout"></div>
@@ -398,8 +434,10 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
     </div>
     <div class="card" style="margin-top:16px"><h2>Why both strategies share random numbers</h2><p class="sub">Measured profit gap (benchmark − A-S) over 20 runs of 100 paths. Sharing random numbers makes the comparison less noisy.</p><div class="chart short" id="ch-crn"></div></div>
   </section>
+  </div>
 
-  <!-- ============================== REAL DATA ============================== -->
+  <div class="tab-wrap" data-tab="archive">
+  <div class="subtabs" id="sub-archive" role="tablist"></div>
   <section class="view" id="view-real-data">
     <p class="view-intro">Every aggregated trade on Binance spot for one coin and one UTC day, from Binance's public archive (checksum-verified). This is the market the strategy has to survive. Drag on any chart to zoom; double-click to reset.</p>
     <div class="daybar" id="daybar"></div>
@@ -415,8 +453,6 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="card" id="live-card" hidden><h2>Live order book snapshot</h2><p class="sub" id="live-sub"></p><div class="chart short" id="ch-live"></div></div>
     </div>
   </section>
-
-  <!-- ============================== BACKTEST ============================== -->
   <section class="view" id="view-backtest">
     <p class="view-intro">Event-driven backtest on the real trades (<span class="mono">mm/backtest.py</span>): 100 ms bars, requote every 500 ms, 50 ms latency, 0.001 BTC per fill, inventory cap ±10 lots. A quote fills only when a trade prints <b>strictly beyond</b> it (pessimistic) or, in the optimistic case, <b>at</b> it. A-S uses k = 0.15 fitted on 9 Nov, so 10 Nov is out of sample, with a horizon that resets every hour.</p>
     <div class="daybar" id="bt-bar"></div>
@@ -429,8 +465,6 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="card"><h2>Time spent at each inventory level</h2><p class="sub">Share of minutes. A-S with higher γ stays near zero; fixed spreads pile up at the cap.</p><div class="chart" id="ch-bt-inv"></div></div>
     </div>
   </section>
-
-  <!-- ============================== UNIVERSE ============================== -->
   <section class="view" id="view-universe">
     <p class="view-intro">Twelve Binance spot coins, sorted into tiers by <b>measured</b> USD volume per day (large &gt; $500M, mid $50–500M, small $5–50M, micro &lt; $5M). Each coin is calibrated on 9 Nov (<span class="mono">mm/calibrate.py</span>) and backtested out of sample on 10 Nov with $100 per fill and a $1,000 inventory limit. Click a column header to sort.</p>
     <div class="daybar" id="uni-bar"></div>
@@ -457,8 +491,6 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
         </tbody></table></div>
       <p class="note">Full write-up: <span class="mono">notes/day8_small_caps.md</span>.</p></div>
   </section>
-
-  <!-- ============================== INFORMED TRADERS ============================== -->
   <section class="view" id="view-informed">
     <p class="view-intro">Real fills lose 1.5–10 bp within a minute while random entries lose nothing: that gap is <b>adverse selection</b>, trading against people who know more. This tab tests defences <b>walk-forward</b>: for each of 4 test days, everything is calibrated on the 3 days before it, then the strategy trades a day it has never seen. 12 coins × 4 days = 48 out-of-sample coin-days.</p>
     <div class="levers" id="levers"></div>
@@ -471,8 +503,6 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
     </div>
     <div class="card" style="margin-top:16px"><div class="card-head"><div><h2>One coin across the 4 test days</h2><p class="sub">Cumulative P&amp;L before fees, days placed end to end (dotted lines mark midnight UTC).</p></div><select id="inf-coin" aria-label="Coin"></select></div><div class="chart" id="ch-inf-curve"></div></div>
   </section>
-
-  <!-- ============================== TUNING & SIGNALS ============================== -->
   <section class="view" id="view-tuning">
     <p class="view-intro">Days 9–10. A <b>parameter sweep</b> over 48 out-of-sample coin-days (A-S vs the infinite-horizon <b>GLFT</b> model, inventory skew, kill-switch strength), tuning that only looks at past days, the cost of slow quotes, <b>cross-asset signals</b> from BTC spot and the BTC perpetual future, and what 50 minutes of the <b>live order book</b> showed.</p>
     <div class="callout" id="tun-callout"></div>
@@ -488,9 +518,15 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <div class="grid g2"><div class="chart" id="ch-tun-book-corr"></div><div class="chart" id="ch-tun-book-dec"></div></div></div>
     <p class="note">Full write-up: <span class="mono">notes/day10_tuning_signals.md</span>.</p>
   </section>
+  </div>
 
-  <!-- ============================== ABOUT ============================== -->
+  <div class="tab-wrap" data-tab="about">
   <section class="view" id="view-about">
+    <div class="about-head"><div class="eyebrow">Quant research project · crypto market making</div>
+      <h1>Avellaneda–Stoikov Market Maker</h1>
+      <p class="lede">The 2008 Avellaneda–Stoikov model built from scratch in Python: an optimal quoting rule for a market maker who earns the spread but must control inventory risk. Replicated on simulated markets, then calibrated and backtested on real Binance trade data for twelve coins, from BTC to micro caps.</p></div>
+    <div class="chips" id="chips"></div>
+    <div class="headline" id="headline"></div>
     <div class="prose">
       <h2 style="margin-top:0">What this is</h2>
       <p>A market maker posts a bid and an ask and earns the gap between them. The risk is inventory: after a run of buys you hold a position that loses money if the price falls. Avellaneda and Stoikov (2008) derive the quotes that maximise a risk-averse market maker's utility. This project implements that model from first principles, checks it against the paper, then takes it to real crypto data, where most of the paper's assumptions break.</p>
@@ -523,6 +559,7 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
       <p class="note" id="links"></p>
     </div>
   </section>
+  </div>
 </main>
 
 <footer>
