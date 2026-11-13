@@ -19,6 +19,14 @@ Basis points per dollar traded, 180 coin-days (`results/queue_baseline.csv`). Th
 - v2 (`docs/BUILD_GUIDE.md`, Tasks 0-11): queue-aware engine shared by backtest, walk-forward and paper trading; edge table; calibration agent; tick-constraint screener; multi-symbol recorder; paper trader with exact replay; daily supervisor.
 - Testnet trader: the same agent sending real post-only orders on the Binance spot testnet, to prove the execution code.
 
+**The dashboard** (`dashboard/`, no build step; the published copy is made by `python -m scripts.publish_dashboard`). The Verdict tab answers "did it work?" in one screen; the detail tabs (P&L, Execution, Risk, Model, Data) read the selected run.
+
+![Verdict tab: headline, forest plot by coin and queue assumption, gate scoreboard](docs/img/verdict.png)
+![Execution tab: markouts by side and action against the 10 bp fee line](docs/img/execution.png)
+![Market book > Universe: the screener with tick size, spread and volume per coin](docs/img/universe.png)
+
+The recorded-order-book views (Market book > Order book, Live, Data > Recorder health and tape validation) fill in once the recorder has run for a few days; until then they say so instead of showing placeholder numbers.
+
 **What is next:** `docs/SPEC_V2_1.md`. v2 ran on a book inferred from trades, so it never saw real book imbalance or queue sizes. v2.1 tests that one remaining lever on recorded order-book data. The code is built and tested (`mm/markov.py` Markov microprice, `mm/queue_model.py` queue chain with cancels, `mm/regime.py` regime filter, the 18-cell book-state edge table with Gate A', and the hedge pre-check), each with a pass rule fixed in advance. None of the pass rules has been evaluated yet: they need several weeks of recorded book data per coin. The BTC-perpetual hedge simulation (Task 18) is only built if the pre-check says go.
 
 **How it was built:** the design, test rules and pass/fail gates are written as specs (`docs/`), and most of the code was implemented by AI models working to those specs, one task at a time, with tests first. Findings by day: `notes/`. Build log: `docs/progress/v2_ledger.md`.

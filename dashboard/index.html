@@ -186,6 +186,11 @@ header { padding: 0 max(16px, 4vw); background: #0c131d; }
 .bar-verdict { margin: 0; flex: 1 1 320px; text-align: right; font: 500 13px var(--font-mono); color: var(--text); }
 body:not(.desk-mode) .bar-run, body:not(.desk-mode) .runbar, body:not(.desk-mode) #run-badge { display: none !important; }
 body.verdict-mode #bar-verdict { display: none !important; }
+@media (max-width: 600px) {
+  .bar-run, .runbar label { width: 100%; }
+  .bar-run select, .runbar select { flex: 1; min-width: 0; max-width: 100%; }
+  .runbar { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+}
 .runbar { margin: 4px 0 8px; }
 .tab-wrap > .subtabs { display: none; }
 .tab-wrap.active > .subtabs { display: flex; gap: 0; margin: 0 0 16px; flex-wrap: wrap; }
