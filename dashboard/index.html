@@ -184,7 +184,8 @@ header { padding: 0 max(16px, 4vw); background: #0c131d; }
 .bar-run { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
 .bar-run select { max-width: 280px; }
 .bar-verdict { margin: 0; flex: 1 1 320px; text-align: right; font: 500 13px var(--font-mono); color: var(--text); }
-body.verdict-mode .bar-run, body.verdict-mode .runbar, body.verdict-mode #run-badge, body.verdict-mode #bar-verdict { display: none !important; }
+body:not(.desk-mode) .bar-run, body:not(.desk-mode) .runbar, body:not(.desk-mode) #run-badge { display: none !important; }
+body.verdict-mode #bar-verdict { display: none !important; }
 .runbar { margin: 4px 0 8px; }
 .tab-wrap > .subtabs { display: none; }
 .tab-wrap.active > .subtabs { display: flex; gap: 0; margin: 0 0 16px; flex-wrap: wrap; }
@@ -194,6 +195,14 @@ body.verdict-mode .bar-run, body.verdict-mode .runbar, body.verdict-mode #run-ba
 .about-head { max-width: 78ch; margin-bottom: 14px; }
 .verdict-line { font-size: 17px; margin: 0 0 16px; max-width: 90ch; }
 .chart.forest { height: 460px; }
+.book-grid { display: grid; grid-template-columns: 280px minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .book-grid { grid-template-columns: 1fr; } }
+.book-charts { display: grid; gap: 16px; min-width: 0; }
+.book-now dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 8px 0; font-size: 13px; }
+.book-now dt { color: var(--muted); } .book-now dd { margin: 0; font: 500 13px var(--font-mono); text-align: right; }
+.book-now .px { font: 500 22px var(--font-mono); }
+.imbbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0; background: var(--panel-2); }
+.imbbar i { display: block; height: 100%; }
 .note.cap { margin: 4px 0 8px; }
 </style>
 </head>
@@ -259,7 +268,24 @@ body.verdict-mode .bar-run, body.verdict-mode .runbar, body.verdict-mode #run-ba
   <section class="view" id="view-book">
     <p class="desk-msg" id="desk-msg-book" hidden></p>
     <div id="desk-body-book">
-      <div class="pending"><b>Order book.</b> Best bid and ask, size at the touch, imbalance and next-move statistics from the recorded book (Dashboard Redesign Tasks R5 and R6).</div>
+      <div class="daybar">
+        <label class="note">Coin <select id="bk-coin"></select></label>
+        <span class="btn-row" id="bk-range"></span>
+        <span class="run-meta" id="bk-meta"></span>
+      </div>
+      <p class="view-intro" id="bk-intro">What does the book look like, and does its imbalance say anything about the next move? Recorded top of book, spot, UTC.</p>
+      <div class="book-grid">
+        <div class="card book-now" id="bk-now"></div>
+        <div class="book-charts">
+          <div class="card"><h2>Best bid and ask, with trades</h2><p class="sub">Step lines; dot colour is the aggressor (blue buy, amber sell), dot area is size</p><div class="chart short" id="bk-price"></div></div>
+          <div class="card"><h2>Size at the best price</h2><p class="sub">Bid size up, ask size down (units of the coin); imbalance on the right axis</p><div class="chart short" id="bk-size"></div></div>
+          <div class="grid g2">
+            <div class="card"><h2>Next move by imbalance</h2><p class="sub" id="bk-imb-sub"></p><div class="chart short" id="bk-imb"></div></div>
+            <div class="card"><h2>Spread in ticks</h2><p class="sub">Share of recorded time</p><div class="chart short" id="bk-spread"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px"><h2>Profile of each coin</h2><p class="sub">Touch size is in units of the coin; queue is the touch size in median trades (the queue model assumes 20 until this is measured)</p><div class="table-wrap" id="bk-profile"></div></div>
     </div>
   </section>
   <section class="view" id="view-market">
@@ -578,6 +604,7 @@ body.verdict-mode .bar-run, body.verdict-mode .runbar, body.verdict-mode #run-ba
 <script src="js/views/execution.js"></script>
 <script src="js/views/risk.js"></script>
 <script src="js/views/model.js"></script>
+<script src="js/views/book.js"></script>
 <script src="js/views/desk_pending.js"></script>
 <script>boot();</script>
 </body>

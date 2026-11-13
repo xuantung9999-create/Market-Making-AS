@@ -37,7 +37,7 @@ import pandas as pd
 from mm.metrics import max_drawdown
 
 SCHEMA = 1
-KINDS = ("backtest", "walkforward", "paper", "live", "demo")
+KINDS = ("backtest", "walkforward", "paper", "live", "demo", "book")
 REQUIRED = ("schema", "run_id", "kind", "label", "built_utc", "config", "days")
 DAY_KEYS_REQUIRED = ("symbol", "date", "variant")
 MIN_FILLS = 20              # a day needs this many fills to enter the statistics
@@ -552,8 +552,9 @@ def _index_entry(b: dict) -> dict:
     for d in b["days"] or b.get("forest") or []:
         if d["symbol"] not in syms and d["symbol"] != "ALL":
             syms.append(d["symbol"])
+    syms = syms or list(b.get("symbols") or [])
     n_days = len({d["date"] for d in b["days"]}) if b["days"] else max(
-        [r.get("days_total", 0) for r in b.get("forest") or []] or [0])
+        [r.get("days_total", 0) for r in b.get("forest") or []] + [len({c["date"] for c in b.get("coverage") or []})] or [0])
     return {"run_id": b["run_id"], "kind": b["kind"], "label": b["label"], "built_utc": b["built_utc"],
             "symbols": syms, "n_days": n_days}
 

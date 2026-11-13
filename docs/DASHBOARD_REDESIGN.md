@@ -134,8 +134,8 @@ times 1e4 (with equal daily notional this equals the sample standard deviation o
 
 ```text
 kind "book", label, built_utc, symbols
-touch      {SYM: {t: [], bid: [], ask: [], bid_qty: [], ask_qty: []}}      1-second samples, last 6 hours
-trades     {SYM: {t: [], price: [], qty: [], side: []}}                    last 6 hours, capped at 5,000 per coin (largest kept)
+touch      {SYM: {t: [], bid: [], ask: [], bid_qty: [], ask_qty: []}}      1-second samples thinned to changes (price moves, size moves over 10%), at most 2,500 points, last 6 hours
+trades     {SYM: {t: [], price: [], qty: [], side: []}}                    last 6 hours, capped at 1,500 per coin (largest kept)
 profile    [{symbol, tick_bp, spread_ticks_med, share_one_tick, touch_qty_med, touch_in_trades,
              updates_per_min, trades_per_min, deplete_s_med}]
 imb_curve  [{symbol, h_s, bucket, imb_mid, move_bp, se, n}]                 10 imbalance deciles x horizons 1, 5, 30 s

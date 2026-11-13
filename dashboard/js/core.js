@@ -203,7 +203,7 @@ function deskBundle(view) {
 /* ======================= Desk shell: run selector, compare, filters ======================= */
 const SHOW_DEMO = /[?&]demo=1\b/.test(location.search);
 function selectableRuns() {
-  return Source.list().filter(r => r.run_id !== Source.VERDICT_ID && (SHOW_DEMO || r.kind !== "demo"));
+  return Source.list().filter(r => r.run_id !== Source.VERDICT_ID && r.kind !== "book" && (SHOW_DEMO || r.kind !== "demo"));
 }
 function initShell() {
   if (typeof Source === "undefined") return;
@@ -219,6 +219,7 @@ function initShell() {
   $("f-variant").addEventListener("change", e => Source.setFilter({ variant: e.target.value }));
   document.addEventListener("runchange", onRunChange);
   Source.loadVerdict();
+  Source.loadBook();
   const first = Source.defaultRunId(SHOW_DEMO);
   if (first) { sel.value = first; Source.select(first); }
   else onRunChange();
@@ -238,6 +239,6 @@ function onRunChange() {
   fs.value = Source.filter.symbol;
   fv.innerHTML = vars.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
   if (Source.filter.variant) fv.value = Source.filter.variant;
-  DESK_VIEWS.concat(["overview"]).forEach(v => { if (draw[v]) dirty[v] = true; });
+  DESK_VIEWS.concat(["overview", "book"]).forEach(v => { if (draw[v]) dirty[v] = true; });
   renderVisible();
 }
