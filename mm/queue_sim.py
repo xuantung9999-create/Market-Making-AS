@@ -108,6 +108,7 @@ class Order:
     live_from_us: int
     action: Action
     feat: Mapping[str, float]
+    last_disp: float = 0.0     # displayed size at our price at the last book update (cancel model)
 
 
 @dataclass
@@ -142,11 +143,14 @@ class QueueSim:
     ``feed_features=True`` (default) the engine forwards every event to it; set False when
     the caller feeds one shared feature engine to several simulators itself."""
 
-    def __init__(self, policy: Policy, cfg: QSConfig, tick: float, features=None, feed_features: bool = True):
+    def __init__(self, policy: Policy, cfg: QSConfig, tick: float, features=None, feed_features: bool = True,
+                 cancel_model=None):
         self.policy, self.cfg, self.tick = policy, cfg, float(tick)
         self.features, self._feed = features, bool(feed_features and features is not None)
         self._skip_idle = True                     # private: skip timers with nothing new (speed only)
         self.q = 0
+        self.cancel_model = cancel_model           # None: today's behaviour (cancels only cap the queue)
+        self._last_trade: dict[int, Optional[tuple]] = {1: None, -1: None}   # resting side -> (ts, price tick)
         self._pos = self._cash = self._spread = self._inv = self._fees = self._notional = 0.0
         self.orders: dict[int, Optional[Order]] = {1: None, -1: None}
         self._pending: dict[int, Optional[_Pending]] = {1: None, -1: None}
@@ -229,10 +233,24 @@ class QueueSim:
             self.features.on_book(ts, bid, ask, bid_qty, ask_qty)
         o = self.orders[1]
         if o is not None and o.k == bk:
+            self._cancel_step(o, ts, float(bid_qty))
             o.queue_ahead = min(o.queue_ahead, self.cfg.queue_mult * float(bid_qty))
         o = self.orders[-1]
         if o is not None and o.k == ak:
+            self._cancel_step(o, ts, float(ask_qty))
             o.queue_ahead = min(o.queue_ahead, self.cfg.queue_mult * float(ask_qty))
+
+    def _cancel_step(self, o: Order, ts: int, new_disp: float) -> None:
+        """A fall in the displayed size at our price with no trade at it in the last 50 ms is a cancel;
+        the cancel model decides how much of it came out of the queue ahead of us."""
+        prev = o.last_disp
+        o.last_disp = new_disp
+        if self.cancel_model is None or new_disp >= prev:
+            return
+        lt = self._last_trade[o.side]
+        if lt is not None and lt[1] == o.k and ts - lt[0] <= 50_000:
+            return                                                   # explained by a trade
+        o.queue_ahead = self.cancel_model.shrink(o.queue_ahead, prev, new_disp)
 
     def on_trade(self, ts_us, price, qty, side) -> list:
         ts = self._enter(ts_us)
@@ -240,6 +258,7 @@ class QueueSim:
         if self._feed:
             self.features.on_trade(ts, price, qty, side)
         k = int(round(price / self.tick))
+        self._last_trade[1 if side < 0 else -1] = (ts, k)
         fills = []
         if side < 0:                              # seller aggressor hits bids
             o = self.orders[1]
@@ -334,7 +353,8 @@ class QueueSim:
                 qa = 0.0                                         # improves the best: first in line
             else:
                 qa = self.cfg.back_queue_mult * disp
-            self.orders[side] = Order(side, p.k, p.k * self.tick, p.qty, qa, p.at_us, p.action, p.feat)
+            self.orders[side] = Order(side, p.k, p.k * self.tick, p.qty, qa, p.at_us, p.action, p.feat,
+                                      float(disp) if p.k == best else 0.0)
 
     def _fill(self, o: Order, ts: int) -> dict:
         side, px, qty, mid = o.side, o.price, o.qty, self._mid
