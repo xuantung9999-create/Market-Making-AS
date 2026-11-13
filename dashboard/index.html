@@ -382,7 +382,10 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
   <section class="view" id="view-health">
     <p class="desk-msg" id="desk-msg-health" hidden></p>
     <div id="desk-body-health">
-      <div class="pending"><b>Next on the build list (Task D10).</b> Can I trust what I am looking at? Recorder coverage and gaps, feed delay, bundle age and tests passed.</div>
+      <p class="view-intro">Can I trust what I am looking at? How much of the book the recorder actually captured, how old each result is, and how many tests pass.</p>
+      <div class="tiles" id="dh-tiles"></div>
+      <div class="card"><h2>Recorder coverage</h2><p class="sub" id="dh-cov-sub">Hours of the day with a clean book, per coin (an hour counts only if it has no gap over 120 s)</p><div class="chart" id="dh-cov"></div></div>
+      <div class="card" style="margin-top:16px"><h2>Bundles</h2><p class="sub">Every result file the page can load and how old it is</p><div class="table-wrap" id="dh-bundles"></div></div>
     </div>
   </section>
   <section class="view" id="view-simlive">
@@ -617,6 +620,7 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
 <script src="js/views/model.js"></script>
 <script src="js/views/book.js"></script>
 <script src="js/live.js"></script>
+<script src="js/views/data.js"></script>
 <script src="js/views/desk_pending.js"></script>
 <script>boot();</script>
 </body>

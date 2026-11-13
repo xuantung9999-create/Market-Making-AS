@@ -128,7 +128,7 @@ function boot() {
 
 /* ======================= Desk helpers =======================
    Shared by every Desk view. Profit green and loss red are used for nothing else on Desk views. */
-const DESK_VIEWS = ["pnl", "execution", "risk", "model-health", "signals", "simlive", "health"];   // views that read the selected run
+const DESK_VIEWS = ["pnl", "execution", "risk", "model-health", "signals", "simlive"];   // views that read the selected run
 const PROFIT = "#22c55e", LOSS = "#ef4444";
 const KIND = {
   backtest:    { label: "SIM",          c: "#94a3b8" },
@@ -239,6 +239,6 @@ function onRunChange() {
   fs.value = Source.filter.symbol;
   fv.innerHTML = vars.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
   if (Source.filter.variant) fv.value = Source.filter.variant;
-  DESK_VIEWS.concat(["overview", "book"]).forEach(v => { if (draw[v]) dirty[v] = true; });
+  DESK_VIEWS.concat(["overview", "book", "health"]).forEach(v => { if (draw[v]) dirty[v] = true; });
   renderVisible();
 }
