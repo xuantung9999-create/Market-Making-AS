@@ -42,7 +42,8 @@ if (typeof document !== "undefined") (function () {
     renderLive();
   }
   function pollTestnet() {
-    const syms = heartbeat.data ? Object.keys(heartbeat.data.symbols || {}) : [];
+    const syms = new Set(heartbeat.data ? Object.keys(heartbeat.data.symbols || {}) : []);
+    ((window.LIVE && window.LIVE.testnet) || []).forEach(t => t.symbol && syms.add(t.symbol));   // traders outside the recorded coins (PC status data)
     syms.forEach(sym => { const s = testnet[sym] || (testnet[sym] = newSource()); poll(s, `/data/testnet/${encodeURIComponent(sym)}/status.json`); });
   }
 
