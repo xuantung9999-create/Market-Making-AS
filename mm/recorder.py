@@ -27,7 +27,10 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import time
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
@@ -37,8 +40,24 @@ BOOK_COLUMNS = ["recv_us", "update_id", "bid", "bid_qty", "ask", "ask_qty"]
 LIVE_TRADE_COLUMNS = ["recv_us", "ts_us", "price", "qty", "side"]
 
 
+HEARTBEAT_TRADES = 30
+HEARTBEAT_EVERY_S = 2.0
+
+
 def now_us() -> int:
     return time.time_ns() // 1000
+
+
+def _iso(us: int, ms: bool = False) -> str:
+    t = datetime.fromtimestamp(us / 1e6, tz=timezone.utc)
+    return t.strftime("%Y-%m-%dT%H:%M:%S.") + f"{t.microsecond // 1000:03d}Z" if ms else t.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _note(q: deque, recv_us: int) -> None:
+    """Remember a message time; forget anything more than a minute older than the newest."""
+    q.append(recv_us)
+    while q and q[0] < recv_us - 60_000_000:
+        q.popleft()
 
 
 def parse_book(d: dict, recv_us: int) -> tuple:
@@ -60,14 +79,44 @@ class Recorder:
         self.trades: list[tuple] = []
         self.n_book = self.n_trades = 0
         self._last_flush = time.monotonic()
+        # kept for the heartbeat file only; nothing here changes what is written to disk
+        self.last_book: tuple | None = None
+        self.last_trades: deque = deque(maxlen=HEARTBEAT_TRADES)
+        self._book_ts: deque = deque()
+        self._trade_ts: deque = deque()
+
+    def on_book(self, row: tuple) -> None:
+        self.book.append(row)
+        self.last_book = row
+        _note(self._book_ts, row[0])
+
+    def on_trade(self, row: tuple) -> None:
+        self.trades.append(row)
+        self.last_trades.append(row)
+        _note(self._trade_ts, row[0])
 
     def handle(self, raw: str, recv_us: int) -> None:
         msg = json.loads(raw)
         stream, d = msg.get("stream", ""), msg.get("data", {})
         if stream.endswith("@bookTicker"):
-            self.book.append(parse_book(d, recv_us))
+            self.on_book(parse_book(d, recv_us))
         elif stream.endswith("@aggTrade"):
-            self.trades.append(parse_trade(d, recv_us))
+            self.on_trade(parse_trade(d, recv_us))
+
+    def heartbeat_entry(self, now_us: int) -> dict:
+        lb = self.last_book
+        lt = self.last_trades[-1] if self.last_trades else None
+        cut = now_us - 60_000_000
+        return {
+            "bid": lb[2] if lb else None, "ask": lb[4] if lb else None,
+            "bid_qty": lb[3] if lb else None, "ask_qty": lb[5] if lb else None,
+            "last_book_utc": _iso(lb[0]) if lb else None,
+            "last_trade_utc": _iso(lt[0]) if lt else None,
+            "book_per_min": sum(1 for t in self._book_ts if t > cut),
+            "trades_per_min": sum(1 for t in self._trade_ts if t > cut),
+            "last_trades": [{"t": _iso(r[1], ms=True), "price": r[2], "qty": r[3], "side": int(r[4])}
+                            for r in self.last_trades],
+        }
 
     def flush(self) -> None:
         stamp = now_us() // 1000
@@ -134,8 +183,10 @@ class MultiRecorder:
     def __init__(self, symbols: list[str], out: str | Path = "data/live", flush_s: float = 60.0):
         self.symbols = [s.upper() for s in symbols]
         self.recorders = {s: Recorder(s, out, flush_s) for s in self.symbols}
+        self.out = Path(out)
         self.flush_s = flush_s
         self._last_flush = time.monotonic()
+        self._last_heartbeat = 0.0
 
     def handle(self, raw: str, recv_us: int) -> None:
         msg = json.loads(raw)
@@ -148,9 +199,28 @@ class MultiRecorder:
             return
         d = msg.get("data", {})
         if kind == "bookTicker":
-            rec.book.append(parse_book(d, recv_us))
+            rec.on_book(parse_book(d, recv_us))
         elif kind == "aggTrade":
-            rec.trades.append(parse_trade(d, recv_us))
+            rec.on_trade(parse_trade(d, recv_us))
+
+    def heartbeat(self, now_us: int | None = None) -> dict:
+        """What the recorder sees right now, per symbol (docs/DASHBOARD_REDESIGN.md section 5)."""
+        now = now_us if now_us is not None else globals()["now_us"]()
+        return {"schema": 1, "ts_utc": _iso(now),
+                "symbols": {s: r.heartbeat_entry(now) for s, r in self.recorders.items()}}
+
+    def write_heartbeat(self, now_us: int | None = None) -> Path:
+        """Atomic: write a temp file, then replace, so a reader never sees half a file."""
+        self.out.mkdir(parents=True, exist_ok=True)
+        path, tmp = self.out / "heartbeat.json", self.out / "heartbeat.json.tmp"
+        tmp.write_text(json.dumps(self.heartbeat(now_us)), encoding="utf-8")
+        os.replace(tmp, path)
+        self._last_heartbeat = time.monotonic()
+        return path
+
+    def maybe_heartbeat(self) -> None:
+        if time.monotonic() - self._last_heartbeat >= HEARTBEAT_EVERY_S:
+            self.write_heartbeat()
 
     def flush(self) -> None:
         for rec in self.recorders.values():
@@ -177,6 +247,7 @@ class MultiRecorder:
                         async for raw in ws:
                             self.handle(raw, now_us())
                             self.maybe_flush()
+                            self.maybe_heartbeat()
                             if deadline is not None and time.monotonic() >= deadline:
                                 break
                 except (OSError, asyncio.TimeoutError, websockets.ConnectionClosed) as e:
