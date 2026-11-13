@@ -114,9 +114,9 @@ function drawLiveRecorder(L) {
 register("pcstatus", () => {
   const msg = $("pcs-msg"), body = $("pcs-body");
   const L = window.LIVE;
+  if (!L && window.PUBLIC_SITE) { msg.textContent = 'This is the public copy of the dashboard. The live feed comes from the order-book recorder and two testnet traders that run 24/7 on my PC, and those numbers are not published. Every other tab shows the recorded results.'; msg.hidden = false; body.hidden = true; return; }
   if (!L) { msg.textContent = liveError || "Loading live status…"; msg.hidden = false; body.hidden = true; return; }
   msg.hidden = true; body.hidden = false;
   drawLiveHeader(L); drawLiveTestnet(L); drawLiveRecorder(L);
 });
-loadLive();
-setInterval(loadLive, LIVE_REFRESH_MS);
+if (!window.PUBLIC_SITE) { loadLive(); setInterval(loadLive, LIVE_REFRESH_MS); }

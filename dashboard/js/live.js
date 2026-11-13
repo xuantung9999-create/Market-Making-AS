@@ -126,6 +126,13 @@ if (typeof document !== "undefined") (function () {
     if (typeof current === "undefined" || current !== "live") return;
     renderFeed(); renderTestnet(); renderPaper();
   }
-  register("live", () => { startLive(); renderLive(); });
+  register("live", () => {
+    if (window.PUBLIC_SITE) {
+      $("lv-status").innerHTML = '<span class="age amber">Not published</span> ' + esc('This is the public copy of the dashboard. The live feed comes from the order-book recorder and two testnet traders that run 24/7 on my PC, and those numbers are not published. Every other tab shows the recorded results.');
+      ["lv-feed", "lv-testnet", "lv-paper"].forEach(id => { $(id).innerHTML = ""; });
+      return;
+    }
+    startLive(); renderLive();
+  });
   window.startLive = startLive;
 })();

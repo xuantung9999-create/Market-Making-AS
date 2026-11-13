@@ -48,3 +48,11 @@ def test_the_newest_book_bundle_is_published_and_older_ones_are_not(site):
     assert "pub-book-2026-11-12.js" in names and "pub-book-2026-11-10.js" not in names
     idx = json.loads((site / "pub" / "runs" / "index.js").read_text()[len("window.RUN_INDEX = "):].rstrip().rstrip(";"))
     assert [r["kind"] for r in idx].count("book") == 1
+
+
+def test_public_copy_is_flagged_so_live_tabs_explain_instead_of_erroring(site):
+    pd_.main(["--out", "pub"])
+    html = (site / "pub" / "index.html").read_text(encoding="utf-8")
+    assert "window.PUBLIC_SITE = true" in html
+    assert html.index("window.PUBLIC_SITE") < html.index('src="js/core.js"')
+    assert "PUBLIC_SITE" not in (ROOT / "dashboard" / "index.html").read_text(encoding="utf-8")

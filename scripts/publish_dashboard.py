@@ -42,8 +42,10 @@ def main(argv=None) -> None:
         shutil.rmtree(out)
     (out / "runs").mkdir(parents=True)
     shutil.copytree(DASH / "js", out / "js")
-    for f in ("index.html", "data.js"):
-        shutil.copy2(DASH / f, out / f)
+    shutil.copy2(DASH / "data.js", out / "data.js")
+    html = (DASH / "index.html").read_text(encoding="utf-8")   # flag the public copy: the Live tabs explain, not error
+    html = html.replace('<script src="data.js"></script>', '<script>window.PUBLIC_SITE = true;</script>\n<script src="data.js"></script>', 1)
+    (out / "index.html").write_text(html, encoding="utf-8")
     pub_index = []
     for rid in wanted:
         entry = next((r for r in index if r["run_id"] == rid), None)
