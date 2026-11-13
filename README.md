@@ -1,17 +1,17 @@
 # Crypto Market Making: from Avellaneda-Stoikov to a queue-aware, self-calibrating quoter
 
-A market-making research project on Binance spot, built from the Avellaneda & Stoikov (2008) paper up to an event-driven, queue-aware simulator with an online calibration agent, a paper trader, a testnet execution layer and an interactive dashboard. 194 tests.
+A market-making research project on Binance spot, built from the Avellaneda & Stoikov (2008) paper up to an event-driven, queue-aware simulator with an online calibration agent, a paper trader, a testnet execution layer and an interactive dashboard. 313 tests.
 
 **The result is negative, and that is the finding.** A candidate edge on tick-constrained micro caps (+16 bp per dollar traded on one day) was put through a pre-registered test: 60 days, three coins, a queue model, 300 ms latency and base-tier fees. It did not survive.
 
-| 13 Sep - 11 Nov 2026, COTI / ANKR / SKL, always quoting the best price | Before fees | After 10 bp maker fee | t (daily P&L) |
+| 13 Sep - 11 Nov 2026, COTI / ANKR / SKL, always quoting the best price | Before fees | After 10 bp maker fee | t (per coin-day) |
 | --- | ---: | ---: | ---: |
 | Queue = 1.0x displayed size (headline) | -8.2 bp | -18.2 bp | -8.4 |
 | Queue = 0.5x (optimistic) | -7.0 bp | -17.0 bp | -8.6 |
 | Queue = 2.0x (stress) | -9.0 bp | -19.0 bp | -8.1 |
 | Front of queue, 100 ms (the earlier assumption) | -1.3 bp | -11.3 bp | -8.5 |
 
-Basis points per dollar traded, 180 coin-days (`results/queue_baseline.csv`). The self-calibrating agent, which learns the net edge of a fill per market state from shadow orders, concluded that every state it could see loses money and declined to trade on all 159 counted coin-days (**Gate A: fail**, `results/gate_a.json`).
+Basis points per dollar traded, 180 coin-days (`results/queue_baseline.csv`). The t column treats each coin-day as one observation; pooling the three coins by date (60 dates) gives t = -9.1 at the headline queue, the figure on the dashboard's Verdict tab. The self-calibrating agent, which learns the net edge of a fill per market state from shadow orders, concluded that every state it could see loses money and declined to trade on all 159 counted coin-days (**Gate A: fail**, `results/gate_a.json`).
 
 **What was built**
 
@@ -19,7 +19,7 @@ Basis points per dollar traded, 180 coin-days (`results/queue_baseline.csv`). Th
 - v2 (`docs/BUILD_GUIDE.md`, Tasks 0-11): queue-aware engine shared by backtest, walk-forward and paper trading; edge table; calibration agent; tick-constraint screener; multi-symbol recorder; paper trader with exact replay; daily supervisor.
 - Testnet trader: the same agent sending real post-only orders on the Binance spot testnet, to prove the execution code.
 
-**What is next:** `docs/SPEC_V2_1.md`. v2 ran on a book inferred from trades, so it never saw real book imbalance or queue sizes. v2.1 tests that one remaining lever on recorded order-book data (a Markov microprice, a queue model with cancels, a regime filter) and adds a hedge study, each with a pass rule fixed in advance. It is a design, not yet built.
+**What is next:** `docs/SPEC_V2_1.md`. v2 ran on a book inferred from trades, so it never saw real book imbalance or queue sizes. v2.1 tests that one remaining lever on recorded order-book data. The code is built and tested (`mm/markov.py` Markov microprice, `mm/queue_model.py` queue chain with cancels, `mm/regime.py` regime filter, the 18-cell book-state edge table with Gate A', and the hedge pre-check), each with a pass rule fixed in advance. None of the pass rules has been evaluated yet: they need several weeks of recorded book data per coin. The BTC-perpetual hedge simulation (Task 18) is only built if the pre-check says go.
 
 **How it was built:** the design, test rules and pass/fail gates are written as specs (`docs/`), and most of the code was implemented by AI models working to those specs, one task at a time, with tests first. Findings by day: `notes/`. Build log: `docs/progress/v2_ledger.md`.
 
