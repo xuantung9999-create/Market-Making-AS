@@ -114,6 +114,23 @@ function drawBookSpread(b) {
            { showlegend: false, xaxis: axis("spread (ticks)", { type: "category" }), yaxis: axis("% of time") });
 }
 
+const NO_DEPTH = "No depth recorded. Start the recorder with --depth (run_recorder_multi_depth.bat), then run_build_book.bat.";
+
+function drawBookDepth(b) {
+  const d = b.depth && b.depth[BOOK.coin];
+  if (!d || !d.ladder) { emptyPanel("bk-ladder", NO_DEPTH); emptyPanel("bk-depth", NO_DEPTH); return; }
+  const u = d.ladder.usd_per_unit || 1, lad = d.ladder;
+  const side = (rows, color, name) => ({ type: "scatter", mode: "lines", name, x: rows.map(r => r.bp), y: rows.map(r => r.cum * u),
+    line: { shape: "hv", color, width: 2 }, fill: "tozeroy", fillcolor: rgba(color, 0.18), customdata: rows.map(r => [r.px, r.qty]),
+    hovertemplate: `${name} %{customdata[0]:.6g}: %{customdata[1]:.6g} units here, $%{y:,.0f} cumulative<extra></extra>` });
+  deskPlot("bk-ladder", [side(lad.bids.slice().reverse(), PROFIT, "Bids"), side(lad.asks, LOSS, "Asks")],
+    { xaxis: axis("distance from the mid (bp)", { zeroline: true, zerolinecolor: C.muted }), yaxis: axis("cumulative size (USD)"), hovermode: "closest" });
+  if (!d.heat) return emptyPanel("bk-depth", "Too few snapshots for a heatmap");
+  deskPlot("bk-depth", [{ type: "heatmap", x: d.heat.t, y: d.heat.y, z: d.heat.z, colorscale: [[0, "#0b1220"], [0.3, "#1e3a5f"], [0.7, "#38bdf8"], [1, "#e0f2fe"]],
+    colorbar: { title: { text: "USD", side: "right" }, thickness: 10 }, hovertemplate: "%{x} UTC, %{y:.1f} bp: $%{z:,.0f}<extra></extra>", zsmooth: false }],
+    { xaxis: axis("UTC", { type: "category", nticks: 6 }), yaxis: axis("distance from the mid (bp)"), hovermode: "closest" });
+}
+
 function drawBookProfile(b) {
   const rows = b.profile || [];
   if (!rows.length) return emptyPanel("bk-profile");
@@ -137,6 +154,6 @@ function drawBook() {
   const b = bookBundle();
   if (!b) return;
   bookControls(b);
-  drawBookNow(b); drawBookPrice(b); drawBookSize(b); drawBookImb(b); drawBookSpread(b); drawBookProfile(b);
+  drawBookNow(b); drawBookPrice(b); drawBookSize(b); drawBookImb(b); drawBookSpread(b); drawBookDepth(b); drawBookProfile(b);
 }
 register("book", drawBook);

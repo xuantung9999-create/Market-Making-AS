@@ -258,6 +258,68 @@ def trades_sample(trades: pd.DataFrame, hours: float = 6, cap: int = 1500) -> di
             "qty": [float(x) for x in t["qty"]], "side": [int(x) for x in t["side"]]}
 
 
+DEPTH_LEVELS = 10
+HEAT_HOURS = 6
+
+
+def _levels(df: pd.DataFrame, side: str) -> tuple[np.ndarray, np.ndarray]:
+    k = "b" if side == "bid" else "a"
+    px = df[[f"{k}p{i}" for i in range(DEPTH_LEVELS)]].to_numpy(float)
+    qty = df[[f"{k}q{i}" for i in range(DEPTH_LEVELS)]].to_numpy(float)
+    return px, qty
+
+
+def depth_ladder(depth: pd.DataFrame) -> Optional[dict]:
+    """The last recorded 10-level snapshot: per level price, size, cumulative size and distance from the mid (bp)."""
+    if depth is None or not len(depth):
+        return None
+    last = depth.sort_values("recv_us").iloc[[-1]]
+    bpx, bq = _levels(last, "bid")
+    apx, aq = _levels(last, "ask")
+    mid = float((bpx[0, 0] + apx[0, 0]) / 2)
+    def side(px, q):
+        out, cum = [], 0.0
+        for p, x in zip(px[0], q[0]):
+            if not (np.isfinite(p) and np.isfinite(x)):
+                continue
+            cum += float(x)
+            out.append({"px": float(p), "qty": float(x), "cum": cum, "bp": round(float((p - mid) / mid * 1e4), 3)})
+        return out
+    return {"ts_us": int(last["recv_us"].iloc[0]), "mid": mid, "usd_per_unit": mid, "bids": side(bpx, bq), "asks": side(apx, aq)}
+
+
+def depth_heatmap(depth: pd.DataFrame, bucket_min: int = 10, n_bins: int = 24) -> Optional[dict]:
+    """Resting size (USD, both sides) by distance from the mid (bp) and time: the mean over each
+    ``bucket_min`` window of the per-snapshot total in each distance bin. Last ``HEAT_HOURS`` hours."""
+    if depth is None or not len(depth):
+        return None
+    d = depth.sort_values("recv_us")
+    d = d[d["recv_us"] >= d["recv_us"].max() - HEAT_HOURS * 3_600_000_000]
+    bpx, bq = _levels(d, "bid")
+    apx, aq = _levels(d, "ask")
+    mid = ((bpx[:, 0] + apx[:, 0]) / 2)[:, None]
+    dist = np.hstack([(bpx - mid) / mid * 1e4, (apx - mid) / mid * 1e4])
+    usd = np.hstack([bq * bpx, aq * apx])
+    ok = np.isfinite(dist) & np.isfinite(usd)
+    if not ok.any():
+        return None
+    R = float(np.ceil(np.nanpercentile(np.abs(dist[ok]), 95) * 10) / 10) or 1.0
+    edges = np.linspace(-R, R, n_bins + 1)
+    step = bucket_min * 60_000_000
+    bk = (d["recv_us"].to_numpy(np.int64) // step)
+    b0, nb = int(bk.min()), int(bk.max() - bk.min()) + 1
+    tix = (bk - b0)
+    yix = np.clip(np.digitize(dist, edges) - 1, 0, n_bins - 1)
+    sums = np.zeros((n_bins, nb))
+    rows = np.repeat(tix[:, None], dist.shape[1], axis=1)
+    np.add.at(sums, (yix[ok], rows[ok]), usd[ok])
+    cnt = np.bincount(tix, minlength=nb).astype(float)
+    z = sums / np.where(cnt > 0, cnt, np.nan)
+    t = [pd.Timestamp((b0 + i) * step, unit="us").strftime("%Y-%m-%dT%H:%M") for i in range(nb)]
+    return {"t": t, "y": [round(float(v), 3) for v in (edges[:-1] + edges[1:]) / 2],
+            "z": [[None if not np.isfinite(v) else round(float(v), 2) for v in row] for row in z], "bucket_min": bucket_min}
+
+
 FILL_TOL, EDGE_TOL_BP = 0.30, 2.0          # the tape-validation rule (scripts/validate_tape.py)
 _TV_KEYS = ("hours", "fills_real", "fills_inf", "net_edge_real", "net_edge_inf", "fill_ratio", "edge_diff_bp", "level_ratio")
 
@@ -284,7 +346,7 @@ def tape_validation(df: pd.DataFrame) -> Optional[dict]:
 
 
 def book_bundle(frames: dict, ticks: Optional[dict] = None, built_utc: Optional[str] = None,
-                tape_validation: Optional[dict] = None) -> dict:
+                tape_validation: Optional[dict] = None, depth: Optional[dict] = None) -> dict:
     """The bundle behind the Market book tab: ``frames`` maps symbol -> (book, trades)."""
     ticks = ticks or {}
     syms = list(frames)
@@ -300,7 +362,8 @@ def book_bundle(frames: dict, ticks: Optional[dict] = None, built_utc: Optional[
         hr[s] = hourly(book, trades)
         cov += coverage(book, s)
         last_us = max(last_us, int(book["recv_us"].max()))
+    dsec = {sym: {"ladder": depth_ladder(df), "heat": depth_heatmap(df)} for sym, df in (depth or {}).items() if df is not None and len(df)}
     date = pd.Timestamp(last_us, unit="us").strftime("%Y-%m-%d")
     return rep.build_bundle(f"book-{date}", "book", f"Recorded order book, to {date}", {}, [], built_utc=built_utc,
                             symbols=syms, touch=touch, trades=trades_, profile=prof, imb_curve=imb,
-                            spread_hist=shist, hourly=hr, coverage=cov, tape_validation=tape_validation)
+                            spread_hist=shist, hourly=hr, coverage=cov, tape_validation=tape_validation, depth=dsec or None)

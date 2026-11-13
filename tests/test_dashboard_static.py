@@ -241,3 +241,9 @@ def test_time_range_buttons_are_shared_and_default_to_all():
     assert 'const RANGE = { days: "all" }' in core and "function rangeX" in core
     for f in ("pnl", "risk"):
         assert "rangeX(" in (DASH / "js" / "views" / f"{f}.js").read_text(encoding="utf-8"), f
+
+
+def test_book_view_has_the_depth_panels_and_a_recorder_hint():
+    assert 'id="bk-ladder"' in _html() and 'id="bk-depth"' in _html()
+    js = (DASH / "js" / "views" / "book.js").read_text(encoding="utf-8")
+    assert "drawBookDepth" in js and "--depth" in js

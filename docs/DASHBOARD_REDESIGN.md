@@ -259,7 +259,7 @@ book touch card.
 **R8. Data view.** Coverage grid (coin x date, colour = hours recorded), tape validation, tests
 passed, bundle ages; sub-tab "Sim vs live" (old D11).
 
-**R9. Depth (optional, ask the user first).** The recorder stores only the best bid and ask. A ladder
+**R9. Depth (built; opt-in with `--depth` / `run_recorder_multi_depth.bat`; stream `<symbol>@depth10@1000ms`, checked against the Binance spot WebSocket docs).** The recorder stores only the best bid and ask. A ladder
 or depth heatmap needs Binance's partial-depth stream (10 levels, 1 s snapshots; confirm the stream
 name and limits in the Binance spot WebSocket docs before coding). Adds `--depth` to the recorder, a
 `depth` section to the book bundle, and two panels: a 10-level ladder with cumulative size, and a

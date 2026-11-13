@@ -3,7 +3,7 @@
 /* ---------- Edit these for your CV / website ---------- */
 const SITE = {
   stage: "v2 · Gate A evaluated",
-  testsPassed: 313,
+  testsPassed: 329,
   author: "Xuân Tùng",
   github: "",      // e.g. "https://github.com/your-name/as-market-maker"
   linkedin: "",    // e.g. "https://www.linkedin.com/in/your-name"

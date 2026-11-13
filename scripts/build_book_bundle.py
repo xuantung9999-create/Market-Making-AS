@@ -45,7 +45,13 @@ def main(argv: list[str] | None = None) -> int:
     tv = None
     if Path(args.validation).exists():
         tv = bookstats.tape_validation(pd.read_csv(args.validation))
-    b = bookstats.book_bundle(frames, tape_validation=tv)
+    depth = {}
+    for s_ in frames:
+        try:
+            depth[s_] = load_live(root / s_ / "depth")
+        except FileNotFoundError:
+            pass                                   # recorded without --depth
+    b = bookstats.book_bundle(frames, tape_validation=tv, depth=depth or None)
     path = report.write_bundle(b, args.out, slim=False)
     print(f"book bundle -> {path} ({path.stat().st_size / 1e3:.0f} kB), {len(frames)} coins")
     return 0
