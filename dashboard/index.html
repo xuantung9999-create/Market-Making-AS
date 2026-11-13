@@ -211,6 +211,7 @@ body.verdict-mode #bar-verdict { display: none !important; }
 .book-now .px { font: 500 22px var(--font-mono); }
 .imbbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0; background: var(--panel-2); }
 .imbbar i { display: block; height: 100%; }
+.live-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--c, #7f93ab); margin-right: 4px; }
 .live-status { font: 500 14px var(--font-mono); margin: 0 0 14px; }
 .live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 8px; }
 .live-grid.dim, .live-card.dim { opacity: .5; }
@@ -275,12 +276,30 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
   </div>
 
   <div class="tab-wrap" data-tab="live">
+  <div class="subtabs" id="sub-live" role="tablist"></div>
   <section class="view" id="view-live">
     <p class="view-intro">Is the recorder alive, and what is each market doing right now? Read from the files the recorder and the traders write; needs the page served over http. Amber after 10 s, red after 60 s without an update.</p>
     <p class="live-status" id="lv-status"></p>
     <div id="lv-feed" class="live-grid"></div>
     <h2 class="live-h">Testnet trader</h2><div class="live-grid" id="lv-testnet"></div>
     <h2 class="live-h">Paper trader</h2><div class="live-grid" id="lv-paper"></div>
+  </section>
+  <section class="view" id="view-pcstatus">
+    <p class="view-intro">What the always-on PC is doing: the supervisor and its processes, the testnet traders (real orders, fake money) and the order-book recorder. Read from live/status.js, rewritten every minute by scripts/build_live.py.</p>
+    <p class="desk-msg" id="pcs-msg" hidden></p>
+    <div id="pcs-body">
+      <div class="tiles" id="live-tiles"></div>
+      <div class="card" style="margin-bottom:16px"><h2>Processes</h2><div class="table-wrap" id="live-procs"></div></div>
+      <div class="card" style="margin-bottom:16px"><h2>Testnet traders</h2><div class="table-wrap" id="live-tn-table"></div></div>
+      <div class="grid g2">
+        <div class="card"><h2>Testnet P&amp;L</h2><div class="chart" id="live-pnl"></div></div>
+        <div class="card"><h2>Position</h2><div class="chart" id="live-pos"></div></div>
+      </div>
+      <div class="card" style="margin-top:16px"><h2>Order activity, last 24 h</h2><div class="chart short" id="live-activity"></div></div>
+      <div class="card" style="margin-top:16px"><h2>Recent fills</h2><div class="table-wrap" id="live-fills"></div></div>
+      <div class="card" style="margin-top:16px"><h2>Recent order events</h2><div class="table-wrap" id="live-events"></div></div>
+      <div class="card" style="margin-top:16px"><h2>Recorder</h2><div class="table-wrap" id="live-rec"></div></div>
+    </div>
   </section>
   </div>
 
@@ -647,6 +666,7 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
 <script src="js/views/model.js"></script>
 <script src="js/views/book.js"></script>
 <script src="js/live.js"></script>
+<script src="js/views/pcstatus.js"></script>
 <script src="js/compare.js"></script>
 <script src="js/views/data.js"></script>
 <script src="js/views/signals.js"></script>

@@ -68,7 +68,7 @@ const dirty = {};
 const draw = {};
 const TABS = {
   "overview":     { label: "Verdict", views: ["overview"] },
-  "live":         { label: "Live", views: ["live"] },
+  "live":         { label: "Live", views: [["live", "Market feed"], ["pcstatus", "PC status"]] },
   "book":         { label: "Market book", views: [["book", "Order book"], ["market", "Universe"]] },
   "pnl":          { label: "P&L", views: ["pnl"] },
   "execution":    { label: "Execution", views: ["execution"] },
