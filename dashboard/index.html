@@ -209,6 +209,8 @@ body.verdict-mode #bar-verdict { display: none !important; }
 .live-h { font-size: 15px; margin: 22px 0 10px; }
 .live-px { font: 500 22px var(--font-mono); margin: 4px 0 8px; }
 .age { font: 600 11px var(--font-mono); padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.verdict { padding: 12px 16px; border-radius: 10px; margin: 0 0 16px; border: 1px solid var(--line); background: var(--panel); max-width: 90ch; }
+.verdict.ok { border-color: #1d4d3d; color: var(--good); } .verdict.amber { border-color: #6b4a10; color: var(--warn); }
 .age.ok { color: #22c55e; background: #0f2e1c; } .age.amber { color: var(--warn); background: #33250a; } .age.red { color: #ef4444; background: #341214; }
 dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 6px 0 10px; font-size: 13px; }
 dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; font: 500 13px var(--font-mono); text-align: right; }
@@ -302,7 +304,8 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
   <section class="view" id="view-market">
     <p class="desk-msg" id="desk-msg-market" hidden></p>
     <div id="desk-body-market">
-      <div class="pending"><b>Next on the build list (Task D10).</b> What is the coin universe doing? The screener with tick size, spread, volume and volatility per coin.</div>
+      <div class="card"><h2>Coin universe</h2><p class="sub">The screener: which coins are tick-constrained (the tick is a large share of the price, so the spread cannot be tighter). Click a heading to sort.</p><div class="table-wrap" id="un-table"></div></div>
+      <div class="card" style="margin-top:16px"><h2>Trading volume per coin</h2><p class="sub">Log scale; tick-constrained coins in amber</p><div class="chart" id="un-vol"></div></div>
     </div>
   </section>
   </div>
@@ -395,7 +398,14 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
   <section class="view" id="view-simlive">
     <p class="desk-msg" id="desk-msg-simlive" hidden></p>
     <div id="desk-body-simlive">
-      <div class="pending"><b>Next on the build list (Task D11).</b> Does the simulator match reality? Two runs side by side, overlaid P&amp;L and markouts, and a consistency verdict.</div>
+      <p class="view-intro">Does the simulator match reality? The page's run is the simulation; choose a paper or testnet run in <b>Compare with</b> (top right). Only coin-days present in both are used.</p>
+      <div id="sl-verdict"></div>
+      <div class="card"><h2>Side by side</h2><p class="sub" id="sl-sub"></p><div class="table-wrap" id="sl-table"></div></div>
+      <div class="grid g2" style="margin-top:16px">
+        <div class="card"><h2>Cumulative P&amp;L</h2><div class="chart" id="sl-pnl"></div></div>
+        <div class="card"><h2>Fills per day</h2><div class="chart" id="sl-fills"></div></div>
+      </div>
+      <div class="card" style="margin-top:16px"><h2>Markout after a fill</h2><p class="sub">Mean 1 s to 5 min markout, weighted by fills; both lines should fall together if the simulator's adverse selection is realistic</p><div class="chart" id="sl-mk"></div></div>
     </div>
   </section>
   </div>
@@ -624,8 +634,11 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
 <script src="js/views/model.js"></script>
 <script src="js/views/book.js"></script>
 <script src="js/live.js"></script>
+<script src="js/compare.js"></script>
 <script src="js/views/data.js"></script>
 <script src="js/views/signals.js"></script>
+<script src="js/views/universe.js"></script>
+<script src="js/views/simlive.js"></script>
 <script src="js/views/desk_pending.js"></script>
 <script>boot();</script>
 </body>

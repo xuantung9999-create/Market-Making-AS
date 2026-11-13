@@ -177,3 +177,54 @@ def test_live_state_machine_tolerates_one_bad_read_and_gives_up_after_three():
     r = subprocess.run(["node", "-e", script, str(DASH / "js" / "live.js")], capture_output=True, text=True, timeout=30)
     assert r.returncode == 0, r.stderr
     assert json.loads(r.stdout) == ["waiting", "ok", "retry", '{"a":1}', "nofeed", "ok", "ok", "amber", "red", "na"]
+
+
+# ---- Sim vs live (D11): the comparison arithmetic lives in js/compare.js and runs under node -------
+def _compare(a, b, va="agent", vb="agent"):
+    script = """
+    const C = require(process.argv[1]);
+    const [a, b, va, vb] = JSON.parse(process.argv[2]);
+    console.log(JSON.stringify(C.compareRuns(a, b, va, vb)));
+    """
+    r = subprocess.run(["node", "-e", script, str(DASH / "js" / "compare.js"), json.dumps([a, b, va, vb])],
+                       capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    return json.loads(r.stdout)
+
+
+def _run(rows, variant="agent"):
+    return {"days": [dict(symbol=s, date=d, variant=variant, fills=f, notional=n, pnl=p, net_edge_bp=e)
+                     for s, d, f, n, p, e in rows]}
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_compare_consistent_when_fills_within_30pct_and_edge_within_2bp():
+    sim = _run([("A", "d1", 100, 10_000, -5.0, -3.0), ("A", "d2", 120, 12_000, -6.0, -3.0), ("B", "d1", 50, 5_000, -2.0, -3.0)])
+    live = _run([("A", "d1", 90, 9_000, -4.0, -2.0), ("A", "d2", 130, 13_000, -7.0, -2.5), ("B", "d3", 999, 9_999, 9.0, 9.0)], "paper")
+    out = _compare(sim, live, "agent", "paper")
+    assert out["verdict"]["state"] == "consistent"
+    assert out["common_days"] == 2                                   # B d1 and B d3 are not in both
+    by = {r["label"]: r for r in out["rows"]}
+    assert by["Fills per coin-day"]["a"] == 110 and by["Fills per coin-day"]["b"] == 110
+    assert out["curves"]["dates"] == ["d1", "d2"] and out["curves"]["a"] == [-5.0, -11.0] and out["curves"]["b"] == [-4.0, -11.0]
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_compare_flags_disagreement_overlap_and_no_fills():
+    base = [("A", "d1", 100, 10_000, -5.0, -3.0)]
+    assert _compare(_run(base), _run([("A", "d1", 200, 20_000, -9.0, -3.0)]))["verdict"]["state"] == "disagree"      # 2x fills
+    assert _compare(_run(base), _run([("A", "d1", 100, 10_000, -5.0, 0.5)]))["verdict"]["state"] == "disagree"       # 3.5 bp edge gap
+    assert _compare(_run(base), _run([("B", "d1", 100, 10_000, -5.0, -3.0)]))["verdict"]["state"] == "no-overlap"
+    v = _compare(_run(base), _run([("A", "d1", 0, 0, 0.0, None)]))["verdict"]
+    assert v["state"] == "no-fills"
+    assert "fills_ratio" in _compare(_run(base), _run(base))["verdict"]
+
+
+def test_universe_and_sim_vs_live_views_are_built_not_placeholders():
+    html = _html()
+    for i in ("un-table", "un-vol", "sl-verdict", "sl-table", "sl-pnl", "sl-fills", "sl-mk"):
+        assert f'id="{i}"' in html, i
+    for js in ("js/compare.js", "js/views/universe.js", "js/views/simlive.js"):
+        assert f'src="{js}"' in html and (DASH / js).exists(), js
+    assert "Next on the build list" not in html
+    assert "fetch(" not in (DASH / "js" / "views" / "simlive.js").read_text(encoding="utf-8")

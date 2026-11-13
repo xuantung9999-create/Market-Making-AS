@@ -128,7 +128,7 @@ function boot() {
 
 /* ======================= Desk helpers =======================
    Shared by every Desk view. Profit green and loss red are used for nothing else on Desk views. */
-const DESK_VIEWS = ["pnl", "execution", "risk", "model-health", "signals", "simlive"];   // views that read the selected run
+const DESK_VIEWS = ["pnl", "execution", "risk", "model-health", "signals", "simlive", "market"];   // views that read the selected run
 const PROFIT = "#22c55e", LOSS = "#ef4444";
 const KIND = {
   backtest:    { label: "SIM",          c: "#94a3b8" },
