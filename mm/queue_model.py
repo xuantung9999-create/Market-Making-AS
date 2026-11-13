@@ -35,8 +35,14 @@ def classify(ts_us, k_prev, size_prev, k_new, size_new, trade_ts_us) -> str | No
     return None
 
 
+def _recv(df: pd.DataFrame) -> pd.DataFrame:
+    """The pipeline's frames call the time column ts_us, the recorder's recv_us; accept both."""
+    return df if "recv_us" in df.columns or "ts_us" not in df.columns else df.rename(columns={"ts_us": "recv_us"})
+
+
 def _rows(book: pd.DataFrame, trades: pd.DataFrame, tick: float, side: int) -> pd.DataFrame:
     """One row per consecutive pair of book updates: state before, kind of the change, event size, dt."""
+    book, trades = _recv(book), _recv(trades)
     px, qty = (book["bid"], book["bid_qty"]) if side > 0 else (book["ask"], book["ask_qty"])
     opp = book["ask_qty"] if side > 0 else book["bid_qty"]
     ts = book["recv_us"].to_numpy(np.int64)

@@ -20,9 +20,15 @@ MIN_US = 60 * 1_000_000
 FEATURES = ["vol_bp", "abs_imb", "n_trades", "mk10_bp"]
 
 
+def _recv(df: pd.DataFrame) -> pd.DataFrame:
+    """The pipeline's trade frames call the time column ts_us, the recorder's recv_us; accept both."""
+    return df if "recv_us" in df.columns or "ts_us" not in df.columns else df.rename(columns={"ts_us": "recv_us"})
+
+
 def minute_features(trades: pd.DataFrame, fills: pd.DataFrame | None = None) -> pd.DataFrame:
     """One row per minute from the first trade's minute to the last (empty minutes: zeros, count 0).
     ``trades``: recv_us, price, qty, side. ``fills``: ts_us, mk10_bp (shadow fills with their 10 s markout)."""
+    trades = _recv(trades)
     t = trades["recv_us"].to_numpy(np.int64)
     m = t // MIN_US
     first, last = int(m.min()), int(m.max())
@@ -140,3 +146,22 @@ def markout_gap(p_toxic: np.ndarray, markout_bp: np.ndarray, threshold: float = 
         se = float(np.sqrt(tox.var(ddof=1) / len(tox) + rest.var(ddof=1) / len(rest)))
         out["gap_bp"], out["t"] = gap, gap / se if se > 0 else None
     return out
+
+
+def causal_p_toxic(train_trades: list, test_trades: pd.DataFrame) -> pd.Series:
+    """Causal regime feed for one test day: fit on the minute features of ``train_trades`` (a list of the
+    previous days' trade frames; no markout column, so the more volatile state is toxic) and run the
+    forward filter over the test day. The value at minute m uses minutes up to m only. Indexed by the
+    minute's start (us)."""
+    X = np.vstack([minute_features(t)[FEATURES[:3]].to_numpy() for t in train_trades])
+    model = fit(X, markout_col=None)
+    f = minute_features(test_trades)
+    return pd.Series(model.p_toxic(f[FEATURES[:3]].to_numpy()), index=f.index, name="p_toxic")
+
+
+def lookup(p: pd.Series, ts_us: int) -> float:
+    """p_toxic known at ``ts_us``: the filter of the last *completed* minute (the current one is unfinished)."""
+    m = (int(ts_us) // MIN_US - 1) * MIN_US
+    if len(p) == 0 or m < int(p.index[0]):
+        return 0.0
+    return float(p.iloc[min((m - int(p.index[0])) // MIN_US, len(p) - 1)])

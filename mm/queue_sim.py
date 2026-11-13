@@ -144,11 +144,12 @@ class QueueSim:
     the caller feeds one shared feature engine to several simulators itself."""
 
     def __init__(self, policy: Policy, cfg: QSConfig, tick: float, features=None, feed_features: bool = True,
-                 cancel_model=None):
+                 cancel_model=None, feat_extra=None):
         self.policy, self.cfg, self.tick = policy, cfg, float(tick)
         self.features, self._feed = features, bool(feed_features and features is not None)
         self._skip_idle = True                     # private: skip timers with nothing new (speed only)
         self.q = 0
+        self.feat_extra = feat_extra               # optional callable(ts, bid_qty, ask_qty) -> dict merged into the decision features
         self.cancel_model = cancel_model           # None: today's behaviour (cancels only cap the queue)
         self._last_trade: dict[int, Optional[tuple]] = {1: None, -1: None}   # resting side -> (ts, price tick)
         self._pos = self._cash = self._spread = self._inv = self._fees = self._notional = 0.0
@@ -298,6 +299,8 @@ class QueueSim:
         else:
             bk, ak, bq, aq = self._book
             feat = dict(self.features.snapshot(ts)) if self.features is not None else {}
+            if self.feat_extra is not None:
+                feat.update(self.feat_extra(ts, bq, aq))
             st = MarketState(ts, bk * self.tick, ak * self.tick, bq, aq, self.tick, feat)
             a_bid, a_ask = self.policy.decide(st, self.q)
             self._apply(ts, Action(a_bid), Action(a_ask), feat)

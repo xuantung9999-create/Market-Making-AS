@@ -32,7 +32,9 @@ import pandas as pd
 
 from datetime import datetime, timezone
 
-from mm import report
+from collections import deque
+
+from mm import regime, report
 from mm.agent import MENU, START_ARM, AgentConfig, CalibrationAgent, run_agent
 from mm.edge import EdgePolicy, EdgeTable
 from mm.features import FeatureEngine
@@ -53,9 +55,15 @@ def _row(res, **kw) -> dict:
     return s
 
 
-def run_symbol(sym: str, qname: str, qmult: float, warmup_days: int, data_dir: str, keep: list | None = None):
+REGIME_DAYS = 7
+MIN_REGIME_DAYS = 3
+
+
+def run_symbol(sym: str, qname: str, qmult: float, warmup_days: int, data_dir: str, keep: list | None = None,
+               book_state: bool = False):
     cfg = replace(QSConfig(), queue_mult=qmult)
     rows, agent, frozen, last_tick, day_no = [], None, None, None, 0
+    prev = deque(maxlen=REGIME_DAYS)           # previous days' trades for the causal regime fit
     for day in symbol_days(sym, data_dir):
         got = load_day(sym, day, data_dir)
         if got is None:
@@ -64,17 +72,24 @@ def run_symbol(sym: str, qname: str, qmult: float, warmup_days: int, data_dir: s
         if agent is None or not np.isclose(tick, last_tick):
             if agent is not None:
                 print(f"WARNING {sym} {day}: tick changed {last_tick:g} -> {tick:g}; edge table reset")
-            agent = CalibrationAgent(AgentConfig(), cfg, tick)
+            agent = CalibrationAgent(AgentConfig(), cfg, tick, book_state=book_state)
             frozen = None if day_no < warmup_days else frozen
         last_tick = tick
         d_idx = agent.live._day
+        if book_state:                          # forward-filtered regime from the previous days only
+            if len(prev) >= MIN_REGIME_DAYS:
+                pt = regime.causal_p_toxic(list(prev), trades)
+                agent.p_toxic_fn = lambda ts, pt=pt: regime.lookup(pt, ts)
+            else:
+                agent.p_toxic_fn = None
+            prev.append(trades)
         run_agent(tape, trades, agent, cfg.decision_ms)
         agent.end_day()
         counted = day_no >= warmup_days
         common = dict(symbol=sym, day=day, queue=qname, queue_mult=qmult, counted=counted, day_no=day_no + 1,
                       live_arm=agent.live_arm)
         out = [("agent", agent.result(day=d_idx)), ("join_touch", run_queue_sim(tape, trades, JoinTouch(), cfg, tick))]
-        if frozen is not None:
+        if frozen is not None and not book_state:      # the frozen arm has no book-state feed
             spec = MENU[START_ARM]
             pol = EdgePolicy(frozen, spec.e_min_bp, spec.z, spec.gamma_bp, name="Frozen start arm")
             out.append(("frozen_start", run_queue_sim(tape, trades, pol, cfg, tick, features=FeatureEngine(tick))))
@@ -89,19 +104,19 @@ def run_symbol(sym: str, qname: str, qmult: float, warmup_days: int, data_dir: s
     return rows, agent
 
 
-def gate_a(df: pd.DataFrame) -> dict:
+def gate_a(df: pd.DataFrame, col: str = "net_10bp") -> dict:
     c = df[df["counted"] & (df["fills"] >= MIN_FILLS)]
     head = c[(c["variant"] == "agent") & (c["queue"] == "headline")]
     stress = c[(c["variant"] == "agent") & (c["queue"] == "stress")]
     keys = set(zip(head["symbol"], head["day"]))
     jt = df[(df["variant"] == "join_touch") & (df["queue"] == "headline") & df["counted"]]
     jt = jt[np.array([k in keys for k in zip(jt["symbol"], jt["day"])], dtype=bool)]
-    x = head["net_10bp"].to_numpy(float)
+    x = head[col].to_numpy(float)
     mean, t = (float(x.mean()) if x.size else float("nan")), t_stat(x)
-    per_sym = head.groupby("symbol")["net_10bp"].sum()
+    per_sym = head.groupby("symbol")[col].sum()
     share = float((x > 0).mean()) if x.size else float("nan")
-    smean = float(stress["net_10bp"].mean()) if len(stress) else float("nan")
-    agent_tot, jt_tot = float(x.sum()), float(jt["net_10bp"].sum())
+    smean = float(stress[col].mean()) if len(stress) else float("nan")
+    agent_tot, jt_tot = float(x.sum()), float(jt[col].sum())
     checks = {
         "1_mean_daily_net_pos_and_t_gt_3": {"mean_daily_net_usd": mean, "t": t, "pass": bool(x.size and mean > 0 and t > 3)},
         "2_three_symbols_positive": {"positive_symbols": int((per_sym > 0).sum()), "per_symbol": per_sym.round(4).to_dict(),
@@ -117,8 +132,38 @@ def gate_a(df: pd.DataFrame) -> dict:
     values = [mean, int((per_sym > 0).sum()), share, smean, agent_tot - jt_tot]
     conditions = [{"id": f"A{i + 1}", "text": t, "value": (v if v == v else None), "pass": c["pass"]}
                   for i, (t, v, c) in enumerate(zip(texts, values, checks.values()))]
-    return {"coin_days": int(x.size), "min_fills": MIN_FILLS, "checks": checks, "conditions": conditions,
+    return {"coin_days": int(x.size), "min_fills": MIN_FILLS, "fee_col": col, "checks": checks, "conditions": conditions,
             "pass": bool(x.size and all(v["pass"] for v in checks.values()))}
+
+
+MIN_DAYS_PRIME = 21
+PRIME_TIERS = (("10", "net_10bp"), ("7.5", "net_7.5bp"), ("0", "net_0bp"))
+
+
+def gate_a_prime(df: pd.DataFrame, min_days: int = MIN_DAYS_PRIME) -> dict:
+    """v2.1 Task 16, Gate A': Gate A's five checks with the same thresholds at 10, 7.5 and 0 bp, on at least
+    ``min_days`` counted days per coin. A pass at 0 bp only is "edge before fees, not tradable at the base tier"."""
+    head = df[df["counted"] & (df["variant"] == "agent") & (df["queue"] == "headline")]
+    per_coin = head.groupby("symbol")["day"].nunique().to_dict()
+    short = {s: n for s, n in per_coin.items() if n < min_days}
+    out = {"min_days": min_days, "counted_days_per_coin": per_coin, "tiers": {}}
+    if not per_coin or short:
+        out["status"] = ("not evaluated: " + (", ".join(f"{s} has {n}" for s, n in sorted(short.items())) +
+                                                f" counted days, needs {min_days} per coin" if short else "no counted days"))
+        return out
+    for name, col in PRIME_TIERS:
+        g = gate_a(df, col)
+        out["tiers"][name] = {"checks": g["checks"], "conditions": g["conditions"], "coin_days": g["coin_days"], "pass": g["pass"]}
+    t = out["tiers"]
+    if t["10"]["pass"]:
+        out["status"] = "pass"
+    elif t["7.5"]["pass"]:
+        out["status"] = "pass at 7.5 bp only: needs a lower fee tier than the base"
+    elif t["0"]["pass"]:
+        out["status"] = "edge before fees, not tradable at the base tier"
+    else:
+        out["status"] = "fail"
+    return out
 
 
 class _Fills:
@@ -127,7 +172,7 @@ class _Fills:
 
 
 def write_dashboard_bundle(qname: str, qmult: float, kept: list, agents: dict, gate: dict | None,
-                           screen_csv: str = "results/screen.csv", out_dir: str = "dashboard/runs"):
+                           screen_csv: str = "results/screen.csv", out_dir: str = "dashboard/runs", tag: str = ""):
     """Dashboard Guide D12: run id wf-<UTC date>-q<queue_mult>, counted days only."""
     if not kept:
         print(f"no dashboard bundle for queue {qname}: no counted days yet")
@@ -155,7 +200,7 @@ def write_dashboard_bundle(qname: str, qmult: float, kept: list, agents: dict, g
     screen = report.screen_rows(pd.read_csv(screen_csv)) if Path(screen_csv).exists() else None
     gates = {"A": {"conditions": gate["conditions"], "pass": gate["pass"]}} if gate else None
     date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    b = report.build_bundle(f"wf-{date}-q{qmult:g}", "walkforward", f"Agent walk-forward, queue {qmult:g}x ({qname})",
+    b = report.build_bundle(f"wf-{date}{tag}-q{qmult:g}", "walkforward", f"Agent walk-forward{' (book state)' if tag else ''}, queue {qmult:g}x ({qname})",
                             {"maker_fee_bps": cfg.maker_fee_bps, "latency_ms": cfg.latency_ms, "queue_mult": cfg.queue_mult,
                              "lot_usd": cfg.lot_usd, "q_max": cfg.q_max, "decision_ms": cfg.decision_ms},
                             days, curves=curves, hourly=hourly, markouts=markouts, wait_hist=wait or None,
@@ -172,15 +217,19 @@ def main(argv=None) -> None:
     ap.add_argument("--warmup-days", type=int, default=7)
     ap.add_argument("--export-state", action="store_true", help="save each coin's final headline table for the paper trader")
     ap.add_argument("--state", default="data/paper/state")
-    ap.add_argument("--out", default="results/agent_walkforward.csv")
+    ap.add_argument("--out", default=None)
+    ap.add_argument("--book-state", action="store_true",
+                    help="v2.1 Task 16: 18-cell book state (imbalance x queue ahead x regime); writes Gate A' to results/gate_a_prime.json")
     args = ap.parse_args(argv)
+    book = args.book_state
+    args.out = args.out or ("results/agent_walkforward_book.csv" if book else "results/agent_walkforward.csv")
     syms = args.symbols.split(",") if args.symbols else v2_universe()
     print(f"v2 universe: {', '.join(syms)}; warm-up days: {args.warmup_days}")
 
     rows, history, finals, kept, agents_by_q = [], {}, {}, {}, {}
     for qname, qm in QUEUES:
         for sym in syms:
-            r, agent = run_symbol(sym, qname, qm, args.warmup_days, args.data, keep=kept.setdefault(qname, []))
+            r, agent = run_symbol(sym, qname, qm, args.warmup_days, args.data, keep=kept.setdefault(qname, []), book_state=book)
             rows += r
             if agent is not None:
                 history.setdefault(sym, {})[qname] = agent.history
@@ -193,7 +242,7 @@ def main(argv=None) -> None:
         return
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(args.out, index=False)
-    Path("results/agent_history.json").write_text(json.dumps(history))
+    Path("results/agent_history_book.json" if book else "results/agent_history.json").write_text(json.dumps(history))
     g = gate_a(df)
     g["warmup_days"] = args.warmup_days
     n_counted = int((df["counted"] & (df["variant"] == "agent") & (df["queue"] == "headline")).sum())
@@ -203,11 +252,17 @@ def main(argv=None) -> None:
         g["status"] = f"fail: the agent declined to trade (< {MIN_FILLS} fills on every counted day): no edge found"
     else:
         g["status"] = "pass" if g["pass"] else "fail"
-    Path("results/gate_a.json").write_text(json.dumps(g, indent=2))
+    Path("results/gate_a_book.json" if book else "results/gate_a.json").write_text(json.dumps(g, indent=2))
+    if book:
+        gp = gate_a_prime(df)
+        Path("results/gate_a_prime.json").write_text(json.dumps(gp, indent=2))
+        print(f"\nGate A' (>= {gp['min_days']} counted days per coin): {gp['status'].upper()}")
+        for tier, t in gp["tiers"].items():
+            print(f"  {tier:>4} bp: {'PASS' if t['pass'] else 'FAIL'} " + ", ".join(f"{k.split('_')[0]}={'ok' if v['pass'] else 'no'}" for k, v in t["checks"].items()))
 
     for qname, qm in QUEUES:
         write_dashboard_bundle(qname, qm, kept.get(qname, []), agents_by_q.get(qname, {}),
-                               g if qname == "headline" and n_counted else None)
+                               g if qname == "headline" and n_counted else None, tag="-book" if book else "")
 
     counted = df[df["counted"]]
     with pd.option_context("display.width", 160, "display.float_format", "{:,.2f}".format):
