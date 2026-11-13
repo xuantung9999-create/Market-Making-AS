@@ -34,7 +34,8 @@ simulation against live. Those are also the things a trading interviewer will as
   - Pending Desk views are registered in `js/views/desk_pending.js`; each D5-D11 task removes its entry.
   - Desk helpers (`section`, `emptyPanel`, `deskPlot`, `deskBundle`, `summaryRow`, `badge`, `sign`) are in `js/core.js`.
   - The demo bundle uses 30-minute curve points (real producers use 5-minute points) to stay small.
-- [ ] D5 P&L is next.
+- [x] D5-D8 (P&L, Execution, Risk, Model) are built; D9-D11 are still placeholders in `js/views/desk_pending.js`.
+- Layout and chart changes from 13 Nov 2026 are in `docs/DASHBOARD_REDESIGN.md`; where it disagrees with section 2 below, it wins.
 
 ## 1. What exists today
 
@@ -219,27 +220,27 @@ when present, else the first.
 - [x] Gate scoreboard: each numbered condition of gates A and B with its value and a pass or fail mark; "not evaluated yet" when the section is missing.
 
 **D5 P&L** (`days`, `summary`, `hourly`)
-- [ ] Waterfall: spread capture -> inventory P&L -> fees -> net, for the filtered selection.
-- [ ] Daily net P&L bars with a 7-day mean line; stacked by symbol when "all symbols" is selected.
-- [ ] Heatmap symbol x UTC hour of mean P&L, and the same for net edge bp.
-- [ ] Statistics table: every key of the summary rows, one row per symbol and the pooled row first; Sharpe shown as "value +/- sharpe_se".
-- [ ] Histogram of daily P&L with the mean and zero marked.
+- [x] Waterfall: spread capture -> inventory P&L -> fees -> net, for the filtered selection.
+- [x] Daily net P&L bars with a 7-day mean line; stacked by symbol when "all symbols" is selected.
+- [x] Heatmap symbol x UTC hour of mean P&L, and the same for net edge bp.
+- [x] Statistics table: every key of the summary rows, one row per symbol and the pooled row first; Sharpe shown as "value +/- sharpe_se".
+- [x] Histogram of daily P&L with the mean and zero marked.
 
 **D6 Execution** (`markouts`, `wait_hist`, `days`)
-- [ ] Markout curves (bp against horizon 1, 10, 60, 300 s, log x) with standard-error bands, split by side, and a second chart split by action (JOIN, BACK). A horizontal line at the fee level shows what a fill must clear.
-- [ ] Queue wait histogram and median wait per symbol.
-- [ ] Table per symbol: fills per day, buy share, net edge bp, markouts at each horizon, adverse selection (`mk_1 - mk_60`).
+- [x] Markout curves (bp against horizon 1, 10, 60, 300 s, log x) with standard-error bands, split by side, and a second chart split by action (JOIN, BACK). A horizontal line at the fee level shows what a fill must clear.
+- [x] Queue wait histogram and median wait per symbol.
+- [x] Table per symbol: fills per day, buy share, net edge bp, markouts at each horizon, adverse selection (`mk_1 - mk_60`).
 
 **D7 Risk** (`curves`, `days`, `stress`, `summary`, `config`)
-- [ ] Inventory path (lots) with the +/- `q_max` limits drawn; share of time at each inventory level.
-- [ ] Drawdown curve under the cumulative P&L curve.
-- [ ] Limit usage tiles: largest inventory seen as a share of `q_max`; worst day against the daily loss stop; number of loss-stop days.
-- [ ] Stress table from `stress`: loss in USD for a 5, 10 and 20 percent gap against a full position. `var95_day` and `es95_day` when present, else "needs 20 days".
+- [x] Inventory path (lots) with the +/- `q_max` limits drawn; share of time at each inventory level.
+- [x] Drawdown curve under the cumulative P&L curve.
+- [x] Limit usage tiles: largest inventory seen as a share of `q_max`; worst day against the daily loss stop; number of loss-stop days.
+- [x] Stress table from `stress`: loss in USD for a 5, 10 and 20 percent gap against a full position. `var95_day` and `es95_day` when present, else "needs 20 days".
 
 **D8 Model** (`edge`, `calib`, `agent`)
-- [ ] Edge table heatmap per symbol and action: rows = book-imbalance bucket (against us, neutral, with us), columns = volatility bucket; cell shows mean net edge bp, with `n` and `se` on hover; cells with `n < 30` hatched.
-- [ ] Calibration chart: predicted net edge (x) against realised (y) with error bars and the diagonal. Points below the diagonal mean the model is too optimistic.
-- [ ] Arm timeline: which menu entry was live over time, with switch markers; a table of the 12 arms' latest decayed scores.
+- [x] Edge table heatmap per symbol and action: rows = book-imbalance bucket (against us, neutral, with us), columns = volatility bucket; cell shows mean net edge bp, with `n` and `se` on hover; cells with `n < 30` hatched.
+- [x] Calibration chart: predicted net edge (x) against realised (y) with error bars and the diagonal. Points below the diagonal mean the model is too optimistic.
+- [x] Arm timeline: which menu entry was live over time, with switch markers; a table of the 12 arms' latest decayed scores.
 
 **D9 Signals** (`edge`, `markouts`)
 - [ ] Bars: mean net edge by imbalance bucket and by volatility bucket, pooled over actions, with standard errors. The research tabs keep the older lead-lag and flow charts; link to them.
