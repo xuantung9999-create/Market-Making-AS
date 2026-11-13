@@ -11,6 +11,8 @@ import argparse
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from mm import bookstats, report
 from mm.recorder import load_live
 
@@ -24,6 +26,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--root", default="data/live")
     ap.add_argument("--symbols", default=None, help="comma-separated; default: every folder under --root")
     ap.add_argument("--out", default="dashboard/runs")
+    ap.add_argument("--validation", default="results/tape_validation.csv",
+                    help="output of scripts.validate_tape; added to the bundle when the file exists")
     args = ap.parse_args(argv)
     root = Path(args.root)
     syms = [s.strip() for s in args.symbols.split(",")] if args.symbols else find_symbols(root)
@@ -38,7 +42,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"skipping {s}: {e}", file=sys.stderr)
     if not frames:
         return 1
-    b = bookstats.book_bundle(frames)
+    tv = None
+    if Path(args.validation).exists():
+        tv = bookstats.tape_validation(pd.read_csv(args.validation))
+    b = bookstats.book_bundle(frames, tape_validation=tv)
     path = report.write_bundle(b, args.out, slim=False)
     print(f"book bundle -> {path} ({path.stat().st_size / 1e3:.0f} kB), {len(frames)} coins")
     return 0

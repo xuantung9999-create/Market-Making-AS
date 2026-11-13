@@ -228,3 +228,9 @@ def test_universe_and_sim_vs_live_views_are_built_not_placeholders():
         assert f'src="{js}"' in html and (DASH / js).exists(), js
     assert "Next on the build list" not in html
     assert "fetch(" not in (DASH / "js" / "views" / "simlive.js").read_text(encoding="utf-8")
+
+
+def test_data_tab_has_the_tape_validation_card():
+    assert 'id="dh-tape"' in _html() and 'id="dh-tape-verdict"' in _html()
+    js = (DASH / "js" / "views" / "data.js").read_text(encoding="utf-8")
+    assert "drawDataTape" in js and "tape_validation" in js

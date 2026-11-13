@@ -258,7 +258,33 @@ def trades_sample(trades: pd.DataFrame, hours: float = 6, cap: int = 1500) -> di
             "qty": [float(x) for x in t["qty"]], "side": [int(x) for x in t["side"]]}
 
 
-def book_bundle(frames: dict, ticks: Optional[dict] = None, built_utc: Optional[str] = None) -> dict:
+FILL_TOL, EDGE_TOL_BP = 0.30, 2.0          # the tape-validation rule (scripts/validate_tape.py)
+_TV_KEYS = ("hours", "fills_real", "fills_inf", "net_edge_real", "net_edge_inf", "fill_ratio", "edge_diff_bp", "level_ratio")
+
+
+def _fin(x):
+    x = float(x)
+    return x if np.isfinite(x) else None
+
+
+def tape_validation(df: pd.DataFrame) -> Optional[dict]:
+    """The Data tab's tape-validation card from results/tape_validation.csv: per coin-day rows and the pooled
+    verdict (fills within 30% and fill-weighted net edge within 2 bp). None when there is nothing."""
+    if df is None or not len(df):
+        return None
+    rows = [{"symbol": str(r["symbol"]), "date": str(r["date"]), **{k: _fin(r[k]) for k in _TV_KEYS}} for _, r in df.iterrows()]
+    fr, fi = float(df["fills_real"].sum()), float(df["fills_inf"].sum())
+    w = lambda e, f: float((df[e] * df[f]).sum() / df[f].sum()) if df[f].sum() else float("nan")
+    er, ei = w("net_edge_real", "fills_real"), w("net_edge_inf", "fills_inf")
+    ratio = fi / fr if fr else float("nan")
+    ok = bool(np.isfinite(ratio) and np.isfinite(er) and np.isfinite(ei) and abs(ratio - 1) <= FILL_TOL and abs(ei - er) <= EDGE_TOL_BP)
+    return {"rows": rows, "pooled": {"ok": ok, "fill_ratio": _fin(ratio), "net_edge_real": _fin(er), "net_edge_inf": _fin(ei),
+                                     "edge_diff_bp": _fin(ei - er), "days": int(df["date"].nunique()),
+                                     "level_ratio_median": _fin(df["level_ratio"].median())}}
+
+
+def book_bundle(frames: dict, ticks: Optional[dict] = None, built_utc: Optional[str] = None,
+                tape_validation: Optional[dict] = None) -> dict:
     """The bundle behind the Market book tab: ``frames`` maps symbol -> (book, trades)."""
     ticks = ticks or {}
     syms = list(frames)
@@ -277,4 +303,4 @@ def book_bundle(frames: dict, ticks: Optional[dict] = None, built_utc: Optional[
     date = pd.Timestamp(last_us, unit="us").strftime("%Y-%m-%d")
     return rep.build_bundle(f"book-{date}", "book", f"Recorded order book, to {date}", {}, [], built_utc=built_utc,
                             symbols=syms, touch=touch, trades=trades_, profile=prof, imb_curve=imb,
-                            spread_hist=shist, hourly=hr, coverage=cov)
+                            spread_hist=shist, hourly=hr, coverage=cov, tape_validation=tape_validation)

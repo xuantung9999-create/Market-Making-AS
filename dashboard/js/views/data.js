@@ -33,9 +33,20 @@ function drawDataBundles() {
     `<tr><td>${esc(r.run_id)}</td><td>${badge(r.kind)}</td><td>${esc(r.built_utc)}</td><td>${esc(ago(r.built_utc).replace("built ", ""))}</td><td>${isNum(r.n_days) ? fmt(r.n_days, 0) : "–"}</td><td>${(r.symbols || []).length}</td></tr>`).join("")}</tbody></table>`);
 }
 
+function drawDataTape() {
+  const tv = Source.book && Source.book.tape_validation;
+  if (!tv) { $("dh-tape-verdict").innerHTML = ""; return emptyPanel("dh-tape", "No tape validation yet. Record at least 3 days, then run run_validate_tape.bat and run_build_book.bat."); }
+  const p = tv.pooled, line = `fills on the inferred book are ${fmt(p.fill_ratio, 2)}x the real book's, net edge ${sign(p.edge_diff_bp, 1)} bp apart, over ${fmt(p.days, 0)} recorded day${p.days === 1 ? "" : "s"}`;
+  $("dh-tape-verdict").innerHTML = p.ok
+    ? `<div class="verdict ok"><b>Inferred tape acceptable</b>: ${line} (rule: fills within ±30% and edge within 2 bp).</div>`
+    : `<div class="verdict amber"><b>Inferred tape not acceptable</b>: ${line}. Median level size, real over assumed: ${fmt(p.level_ratio_median, 2)}. Re-run the v2 results with the level size scaled by it.</div>`;
+  fillHtml("dh-tape", `<table><thead><tr><th>Coin</th><th>Date</th><th>Hours</th><th>Fills (real)</th><th>Fills (inferred)</th><th>Edge real (bp)</th><th>Edge inferred (bp)</th></tr></thead><tbody>${tv.rows.map(r =>
+    `<tr><td>${esc(r.symbol)}</td><td>${esc(r.date)}</td><td>${fmt(r.hours, 0)}</td><td>${fmt(r.fills_real, 0)}</td><td>${fmt(r.fills_inf, 0)}</td><td>${fmt(r.net_edge_real, 2)}</td><td>${fmt(r.net_edge_inf, 2)}</td></tr>`).join("")}</tbody></table>`);
+}
+
 function drawData() {
   const body = $("desk-body-health"), msg = $("desk-msg-health");
   msg.hidden = true; body.hidden = false;
-  drawDataTiles(); drawDataCoverage(); drawDataBundles();
+  drawDataTiles(); drawDataCoverage(); drawDataTape(); drawDataBundles();
 }
 register("health", drawData);
