@@ -205,7 +205,30 @@ const SHOW_DEMO = /[?&]demo=1\b/.test(location.search);
 function selectableRuns() {
   return Source.list().filter(r => r.run_id !== Source.VERDICT_ID && r.kind !== "book" && (SHOW_DEMO || r.kind !== "demo"));
 }
+/* Shared time range for the over-time charts (P&L daily, Risk inventory and drawdown): 3d / 14d / all, default all. */
+const RANGE = { days: "all" };
+function rangeX(lastIso) {
+  if (RANGE.days === "all" || !lastIso) return null;
+  const end = Date.parse(String(lastIso).length <= 10 ? lastIso + "T23:59:59Z" : lastIso);
+  return isFinite(end) ? [new Date(end - RANGE.days * 864e5).toISOString(), new Date(end).toISOString()] : null;
+}
+function initRange() {
+  const bar = document.querySelector(".runbar");
+  if (!bar || $("range-btns")) return;
+  const wrap = document.createElement("span");
+  wrap.id = "range-btns"; wrap.className = "range-btns"; wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Time range");
+  wrap.innerHTML = '<span class="run-meta">Range</span>' + [["3d", 3], ["14d", 14], ["all", "all"]].map(([l, d]) => `<button type="button" data-d="${d}" aria-pressed="${String(d) === String(RANGE.days)}">${l}</button>`).join("");
+  wrap.addEventListener("click", e => {
+    const d = e.target.dataset && e.target.dataset.d;
+    if (!d) return;
+    RANGE.days = d === "all" ? "all" : +d;
+    wrap.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.d === d)));
+    ["pnl", "risk"].forEach(markDirty);
+  });
+  bar.appendChild(wrap);
+}
 function initShell() {
+  initRange();
   if (typeof Source === "undefined") return;
   const runs = selectableRuns();
   const sel = $("run-select"), cmp = $("run-compare");

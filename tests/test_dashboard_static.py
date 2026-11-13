@@ -234,3 +234,10 @@ def test_data_tab_has_the_tape_validation_card():
     assert 'id="dh-tape"' in _html() and 'id="dh-tape-verdict"' in _html()
     js = (DASH / "js" / "views" / "data.js").read_text(encoding="utf-8")
     assert "drawDataTape" in js and "tape_validation" in js
+
+
+def test_time_range_buttons_are_shared_and_default_to_all():
+    core = (DASH / "js" / "core.js").read_text(encoding="utf-8")
+    assert 'const RANGE = { days: "all" }' in core and "function rangeX" in core
+    for f in ("pnl", "risk"):
+        assert "rangeX(" in (DASH / "js" / "views" / f"{f}.js").read_text(encoding="utf-8"), f

@@ -31,6 +31,8 @@ function drawPnlDaily(b) {
     tr.push({ type: "scatter", mode: "lines", x: rows.map(d => d.date), y: ma, yaxis: ax, line: { color: C.text, width: 1.6 }, hovertemplate: "7-day mean %{y:,.0f}<extra></extra>" });
   });
   lay.xaxis.anchor = syms.length > 1 ? "y" + syms.length : "y";
+  const rg = rangeX(ds.reduce((m, d) => d.date > m ? d.date : m, ""));
+  if (rg) lay.xaxis.range = rg;
   lay.margin = { l: 72, r: 16, t: 10, b: 44 };
   deskPlot("pnl-daily", tr, lay);
 }

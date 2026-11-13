@@ -14,7 +14,7 @@ function drawRiskInventory(b) {
   });
   if (!tr.length) { emptyPanel("rk-inv"); emptyPanel("rk-invdist"); return; }
   const shapes = isNum(qmax) ? [qmax, -qmax].map(y => ({ type: "line", xref: "paper", x0: 0, x1: 1, y0: y, y1: y, line: { color: LOSS, dash: "dash" } })) : [];
-  deskPlot("rk-inv", tr, { xaxis: axis("UTC", { type: "date" }), yaxis: axis("Inventory (lots)", { zeroline: true, zerolinecolor: C.muted }), shapes });
+  deskPlot("rk-inv", tr, { xaxis: axis("UTC", { type: "date", range: rangeX(Object.values(cv).map(c => (c.t || []).slice(-1)[0]).filter(Boolean).sort().pop()) || undefined }), yaxis: axis("Inventory (lots)", { zeroline: true, zerolinecolor: C.muted }), shapes });
   const qh = section(b, "q_hist"), hist = qh ? riskSyms(b).map(x => qh[`${x}|${f.variant}`]).filter(Boolean) : [];
   const lv = [...new Set(hist.flatMap(h => h.levels))].sort((p, q) => p - q);
   const share = lv.map(l => hist.reduce((a, h) => { const i = h.levels.indexOf(l); return a + (i >= 0 ? h.share[i] : 0); }, 0) / Math.max(1, hist.length) * 100);
@@ -34,7 +34,7 @@ function drawRiskDrawdown(b) {
   deskPlot("rk-dd", [
     { x: c.t, y: c.pnl, name: "Cumulative P&L", mode: "lines", line: { color: SERIES[0], width: 1.5 }, hovertemplate: "%{y:,.2f} USD<extra></extra>" },
     { x: c.t, y: dd, name: "Drawdown", mode: "lines", fill: "tozeroy", line: { color: LOSS, width: 1 }, fillcolor: rgba(LOSS, 0.2), hovertemplate: "%{y:,.2f} USD<extra></extra>" },
-  ], { xaxis: axis("UTC", { type: "date" }), yaxis: axis("USD", { zeroline: true, zerolinecolor: C.muted }) });
+  ], { xaxis: axis("UTC", { type: "date", range: rangeX(c.t.slice(-1)[0]) || undefined }), yaxis: axis("USD", { zeroline: true, zerolinecolor: C.muted }) });
 }
 
 function drawRiskTiles(b) {

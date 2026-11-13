@@ -192,6 +192,9 @@ body.verdict-mode #bar-verdict { display: none !important; }
   .runbar { display: flex; flex-wrap: wrap; gap: 6px 12px; }
 }
 .runbar { margin: 4px 0 8px; }
+.range-btns { display: inline-flex; align-items: center; gap: 4px; }
+.range-btns button { background: var(--panel); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 3px 10px; font: 500 12px var(--font-body); cursor: pointer; }
+.range-btns button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
 .tab-wrap > .subtabs { display: none; }
 .tab-wrap.active > .subtabs { display: flex; gap: 0; margin: 0 0 16px; flex-wrap: wrap; }
 .subtabs a { padding: 6px 14px; border: 1px solid var(--line); color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 500; background: var(--panel); }
