@@ -3,4 +3,3 @@
 ["signals", "market", "simlive", "health"].forEach(v => {
   if (!draw[v]) register(v, () => deskBundle(v));
 });
-["live"].forEach(v => { if (!draw[v]) register(v, () => {}, false); });   // these read no run

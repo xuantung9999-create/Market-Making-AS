@@ -130,3 +130,50 @@ def test_every_old_hash_resolves_to_a_tab_in_core_js():
 
 def test_demo_run_is_hidden_unless_asked_for():
     assert "demo=1" in (DASH / "js" / "core.js").read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------- live monitor (R7)
+import json
+import shutil
+import subprocess
+
+import pytest
+
+
+def _live_js():
+    return (DASH / "js" / "live.js").read_text(encoding="utf-8")
+
+
+def test_live_js_is_the_only_file_that_fetches_and_only_over_http():
+    src = _live_js()
+    assert "fetch(" in src and "location.protocol" in src
+    assert "/data/live/heartbeat.json" in src and "/data/paper/snapshot.json" in src and "/data/testnet/" in src
+    assert "2000" in src and "10000" in src
+    assert 'src="js/live.js"' in _html()
+
+
+def test_live_view_has_its_panels_and_the_testnet_label():
+    html = _html()
+    for i in ("lv-status", "lv-feed", "lv-testnet", "lv-paper"):
+        assert f'id="{i}"' in html, i
+    assert "TESTNET: execution test, not a result" in _live_js()
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not installed")
+def test_live_state_machine_tolerates_one_bad_read_and_gives_up_after_three():
+    script = """
+    const L = require(process.argv[1]);
+    const s = L.newSource();
+    const out = [];
+    out.push(L.status(s));                                  // nothing yet
+    L.record(s, true, {a: 1}, 1000); out.push(L.status(s)); // ok
+    L.record(s, false, null, 2000);  out.push(L.status(s)); // one bad read: data kept
+    out.push(JSON.stringify(s.data));
+    L.record(s, false, null, 3000);  L.record(s, false, null, 4000); out.push(L.status(s));
+    L.record(s, true, {a: 2}, 5000); out.push(L.status(s)); // recovers
+    out.push(L.ageClass(3), L.ageClass(30), L.ageClass(90), L.ageClass(null));
+    console.log(JSON.stringify(out));
+    """
+    r = subprocess.run(["node", "-e", script, str(DASH / "js" / "live.js")], capture_output=True, text=True, timeout=30)
+    assert r.returncode == 0, r.stderr
+    assert json.loads(r.stdout) == ["waiting", "ok", "retry", '{"a":1}', "nofeed", "ok", "ok", "amber", "red", "na"]

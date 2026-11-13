@@ -203,6 +203,16 @@ body.verdict-mode #bar-verdict { display: none !important; }
 .book-now .px { font: 500 22px var(--font-mono); }
 .imbbar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0; background: var(--panel-2); }
 .imbbar i { display: block; height: 100%; }
+.live-status { font: 500 14px var(--font-mono); margin: 0 0 14px; }
+.live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; margin-bottom: 8px; }
+.live-grid.dim, .live-card.dim { opacity: .5; }
+.live-h { font-size: 15px; margin: 22px 0 10px; }
+.live-px { font: 500 22px var(--font-mono); margin: 4px 0 8px; }
+.age { font: 600 11px var(--font-mono); padding: 2px 8px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+.age.ok { color: #22c55e; background: #0f2e1c; } .age.amber { color: var(--warn); background: #33250a; } .age.red { color: #ef4444; background: #341214; }
+dl.kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; margin: 6px 0 10px; font-size: 13px; }
+dl.kv dt { color: var(--muted); } dl.kv dd { margin: 0; font: 500 13px var(--font-mono); text-align: right; }
+table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
 .note.cap { margin: 4px 0 8px; }
 </style>
 </head>
@@ -256,10 +266,11 @@ body.verdict-mode #bar-verdict { display: none !important; }
 
   <div class="tab-wrap" data-tab="live">
   <section class="view" id="view-live">
-    <p class="desk-msg" id="desk-msg-live" hidden></p>
-    <div id="desk-body-live">
-      <div class="pending"><b>Live monitor.</b> Heartbeat, paper and testnet status appear here once the recorder is running and the page is served over http (Dashboard Redesign Task R7).</div>
-    </div>
+    <p class="view-intro">Is the recorder alive, and what is each market doing right now? Read from the files the recorder and the traders write; needs the page served over http. Amber after 10 s, red after 60 s without an update.</p>
+    <p class="live-status" id="lv-status"></p>
+    <div id="lv-feed" class="live-grid"></div>
+    <h2 class="live-h">Testnet trader</h2><div class="live-grid" id="lv-testnet"></div>
+    <h2 class="live-h">Paper trader</h2><div class="live-grid" id="lv-paper"></div>
   </section>
   </div>
 
@@ -605,6 +616,7 @@ body.verdict-mode #bar-verdict { display: none !important; }
 <script src="js/views/risk.js"></script>
 <script src="js/views/model.js"></script>
 <script src="js/views/book.js"></script>
+<script src="js/live.js"></script>
 <script src="js/views/desk_pending.js"></script>
 <script>boot();</script>
 </body>
