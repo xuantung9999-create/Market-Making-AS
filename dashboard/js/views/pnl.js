@@ -1,53 +1,48 @@
 /* pnl.js: Desk > P&L (Dashboard Guide Task D5). Reads only: days, summary, hourly. */
 
+/* Attribution in bp per dollar traded, grouped by coin: spread captured, what inventory did, fees, net. */
 function drawPnlWaterfall(b) {
-  const ds = filteredDays(b);
-  if (!ds.length) return emptyPanel("pnl-wf");
-  const sum = k => ds.reduce((a, d) => a + (isNum(d[k]) ? d[k] : 0), 0);
-  const sc = sum("spread_capture"), inv = sum("inventory_pnl"), fees = sum("fees"), net = sum("pnl");
-  deskPlot("pnl-wf", [{
-    type: "waterfall", orientation: "v", measure: ["relative", "relative", "relative", "total"],
-    x: ["Spread capture", "Inventory P&L", "Fees", "Net"], y: [sc, inv, -fees, net],
-    text: [sc, inv, -fees, net].map(v => sign(v)), textposition: "outside",
-    increasing: { marker: { color: PROFIT } }, decreasing: { marker: { color: LOSS } },
-    totals: { marker: { color: pnlColor(net) } }, connector: { line: { color: C.line } },
-    hovertemplate: "%{x}: %{y:,.2f} USD<extra></extra>",
-  }], { yaxis: axis("USD", { zeroline: true, zerolinecolor: C.muted }), showlegend: false });
+  const f = Source.filter, all = filteredDays(b);
+  if (!all.length) return emptyPanel("pnl-wf");
+  const syms = f.symbol === "ALL" ? Source.symbolsOf(b) : [f.symbol];
+  const parts = [["spread_capture", "Spread capture", 1], ["inventory_pnl", "Inventory P&L", 1], ["fees", "Fees", -1], ["pnl", "Net", 1]];
+  const bp = (ds, k, sg) => { const n = ds.reduce((a, d) => a + (d.notional || 0), 0); return n > 0 ? sg * ds.reduce((a, d) => a + (isNum(d[k]) ? d[k] : 0), 0) / n * 1e4 : null; };
+  const groups = syms.map(s => [s, all.filter(d => d.symbol === s)]);
+  if (syms.length > 1) groups.push(["All coins", all]);
+  const tr = groups.map(([name, ds], i) => ({ type: "bar", name: name.replace("USDT", ""), x: parts.map(p => p[1]), y: parts.map(p => bp(ds, p[0], p[2])),
+    marker: { color: name === "All coins" ? C.text : SERIES[i % SERIES.length] }, text: parts.map(p => { const v = bp(ds, p[0], p[2]); return isNum(v) ? fmt(v, 1) : ""; }),
+    textposition: "outside", hovertemplate: `${name} %{x}: %{y:.1f} bp per $ traded<extra></extra>` }));
+  deskPlot("pnl-wf", tr, { barmode: "group", yaxis: axis("bp per dollar traded", { zeroline: true, zerolinecolor: C.muted, zerolinewidth: 1.5 }), xaxis: axis("") });
 }
 
+/* Daily net P&L as small multiples: one row per coin, bars with the 7-day mean. Stacked signed bars cannot be read. */
 function drawPnlDaily(b) {
   const f = Source.filter, ds = filteredDays(b);
   if (!ds.length) return emptyPanel("pnl-daily");
-  const dates = [...new Set(ds.map(d => d.date))].sort();
   const syms = f.symbol === "ALL" ? Source.symbolsOf(b) : [f.symbol];
-  const tr = syms.map((s, i) => {
-    const by = Object.fromEntries(ds.filter(d => d.symbol === s).map(d => [d.date, d.pnl]));
-    return { type: "bar", name: s, x: dates, y: dates.map(t => by[t] ?? null), marker: { color: SERIES[i % SERIES.length] },
-             hovertemplate: `${s} %{x}: %{y:,.2f} USD<extra></extra>` };
+  const tr = [], lay = { xaxis: axis("UTC date", { type: "date" }), showlegend: false, height: Math.max(260, 150 * syms.length + 40), hovermode: "x" };
+  const gap = 0.06, h = (1 - gap * (syms.length - 1)) / syms.length;
+  syms.forEach((s, i) => {
+    const rows = ds.filter(d => d.symbol === s).sort((a, c) => a.date < c.date ? -1 : 1), y = rows.map(d => d.pnl);
+    const ax = i ? "y" + (i + 1) : "y", top = 1 - i * (h + gap);
+    lay["yaxis" + (i ? i + 1 : "")] = Object.assign(axis(s.replace("USDT", "") + " (USD)", { zeroline: true, zerolinecolor: C.muted }), { domain: [top - h, top], anchor: "x" });
+    tr.push({ type: "bar", x: rows.map(d => d.date), y, yaxis: ax, marker: { color: y.map(pnlColor) }, hovertemplate: `${s} %{x}: %{y:,.0f} USD<extra></extra>` });
+    const ma = y.map((_, k) => { const w = y.slice(Math.max(0, k - 6), k + 1); return w.reduce((a, v) => a + v, 0) / w.length; });
+    tr.push({ type: "scatter", mode: "lines", x: rows.map(d => d.date), y: ma, yaxis: ax, line: { color: C.text, width: 1.6 }, hovertemplate: "7-day mean %{y:,.0f}<extra></extra>" });
   });
-  const tot = dates.map(t => ds.filter(d => d.date === t).reduce((a, d) => a + (d.pnl || 0), 0));
-  const ma = tot.map((_, i) => { const w = tot.slice(Math.max(0, i - 6), i + 1); return w.reduce((a, x) => a + x, 0) / w.length; });
-  tr.push({ type: "scatter", mode: "lines", name: "7-day mean (total)", x: dates, y: ma, line: { color: C.text, width: 2 } });
-  deskPlot("pnl-daily", tr, { barmode: "relative", xaxis: axis("UTC date", { type: "date" }), yaxis: axis("USD per day", { zeroline: true, zerolinecolor: C.muted }) });
+  lay.xaxis.anchor = syms.length > 1 ? "y" + syms.length : "y";
+  lay.margin = { l: 72, r: 16, t: 10, b: 44 };
+  deskPlot("pnl-daily", tr, lay);
 }
 
 function drawPnlHeat(b) {
   const f = Source.filter, h = section(b, "hourly");
-  if (!h) { emptyPanel("pnl-heat"); emptyPanel("pnl-heat-edge"); return; }
+  if (!h) return emptyPanel("pnl-heat-edge");
   const syms = (f.symbol === "ALL" ? Source.symbolsOf(b) : [f.symbol]).filter(s => h[`${s}|${f.variant}`]);
-  if (!syms.length) { emptyPanel("pnl-heat"); emptyPanel("pnl-heat-edge"); return; }
-  const days = s => Math.max(1, (section(b, "days") || []).filter(d => d.symbol === s && d.variant === f.variant).length);
-  const hrs = [...Array(24).keys()];
-  const z = syms.map(s => h[`${s}|${f.variant}`].pnl.map(v => v / days(s)));
-  const scale = [[0, LOSS], [0.5, C.panel], [1, PROFIT]];
-  const lim = Math.max(1e-9, ...z.flat().map(Math.abs));
-  deskPlot("pnl-heat", [{ type: "heatmap", x: hrs, y: syms, z, zmin: -lim, zmax: lim, colorscale: scale,
-    colorbar: { title: { text: "USD/day" } }, hovertemplate: "%{y} %{x}:00 UTC: %{z:,.2f} USD/day<extra></extra>" }],
-    { xaxis: axis("UTC hour", { dtick: 2 }), yaxis: axis("") });
   const ze = syms.map(s => h[`${s}|${f.variant}`].net_edge_bp || null);
-  if (ze.some(r => !r)) return emptyPanel("pnl-heat-edge");
-  const le = Math.max(1e-9, ...ze.flat().map(Math.abs));
-  deskPlot("pnl-heat-edge", [{ type: "heatmap", x: hrs, y: syms, z: ze, zmin: -le, zmax: le, colorscale: scale,
+  if (!syms.length || ze.some(r => !r)) return emptyPanel("pnl-heat-edge");
+  const hrs = [...Array(24).keys()], le = Math.max(1e-9, ...ze.flat().filter(isNum).map(Math.abs));
+  deskPlot("pnl-heat-edge", [{ type: "heatmap", x: hrs, y: syms, z: ze, zmin: -le, zmax: le, colorscale: [[0, LOSS], [0.5, C.panel], [1, PROFIT]],
     colorbar: { title: { text: "bp" } }, hovertemplate: "%{y} %{x}:00 UTC: %{z:,.2f} bp<extra></extra>" }],
     { xaxis: axis("UTC hour", { dtick: 2 }), yaxis: axis("") });
 }
@@ -75,11 +70,13 @@ function drawPnlHist(b) {
   const ds = filteredDays(b).filter(d => (d.fills || 0) >= 20);
   if (!ds.length) return emptyPanel("pnl-hist", "No day with 20 or more fills in this selection");
   const x = ds.map(d => d.pnl), mean = x.reduce((a, v) => a + v, 0) / x.length;
+  const sd = x.length > 1 ? Math.sqrt(x.reduce((a, v) => a + (v - mean) ** 2, 0) / (x.length - 1)) : null;
+  const tstat = sd ? mean / (sd / Math.sqrt(x.length)) : null;
   deskPlot("pnl-hist", [{ type: "histogram", x, nbinsx: 30, marker: { color: rgba(SERIES[0], 0.7) }, hovertemplate: "%{x} USD: %{y} days<extra></extra>" }],
     { xaxis: axis("Daily net P&L (USD)"), yaxis: axis("Days"), showlegend: false,
       shapes: [{ type: "line", x0: 0, x1: 0, yref: "paper", y0: 0, y1: 1, line: { color: C.muted, dash: "dot" } },
                { type: "line", x0: mean, x1: mean, yref: "paper", y0: 0, y1: 1, line: { color: pnlColor(mean), width: 2 } }],
-      annotations: [{ x: mean, yref: "paper", y: 0.97, text: `mean ${sign(mean)} USD`, showarrow: false, xanchor: "right", yanchor: "top", font: { color: pnlColor(mean) } }] });
+      annotations: [{ x: mean, yref: "paper", y: 0.97, text: `mean ${sign(mean)} USD · ${x.length} ${Source.filter.symbol === "ALL" ? "coin-days" : "days"}${isNum(tstat) && x.length >= 5 ? " · t = " + fmt(tstat, 1) : ""}`, showarrow: false, xanchor: "right", yanchor: "top", font: { color: pnlColor(mean) } }] });
 }
 
 function drawPnl() {

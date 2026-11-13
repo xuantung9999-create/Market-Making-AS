@@ -313,9 +313,8 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
     <div id="desk-body-pnl">
       <p class="view-intro">Where does the P&amp;L come from, and is it statistically real? Net P&amp;L is after maker fees. All times UTC.</p>
       <div class="grid g2">
-        <div class="card"><h2>Attribution</h2><p class="sub">Spread captured at the fill, then what inventory did, then fees (USD, selected coins and days)</p><div class="chart" id="pnl-wf"></div></div>
-        <div class="card"><h2>Daily net P&amp;L</h2><p class="sub">USD per day, stacked by coin, with the 7-day mean of the total</p><div class="chart" id="pnl-daily"></div></div>
-        <div class="card"><h2>P&amp;L by hour of day</h2><p class="sub">Mean USD per day earned in each UTC hour</p><div class="chart" id="pnl-heat"></div></div>
+        <div class="card"><h2>Attribution</h2><p class="sub">Spread captured at the fill, what inventory did, fees and net, in bp per dollar traded, coin by coin</p><div class="chart" id="pnl-wf"></div></div>
+        <div class="card"><h2>Daily net P&amp;L</h2><p class="sub">USD per day, one row per coin; white line is the 7-day mean</p><div class="chart" id="pnl-daily"></div></div>
         <div class="card"><h2>Net edge by hour of day</h2><p class="sub">Mean net edge per fill (bp, 60 s markout minus fee)</p><div class="chart" id="pnl-heat-edge"></div></div>
       </div>
       <div class="card" style="margin-top:16px"><h2>Statistics</h2><p class="sub">Computed in Python (mm/report.py). Only days with 20+ fills are counted; all days enter the total.</p><div class="table-wrap" id="pnl-stats"></div></div>
@@ -333,6 +332,7 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
         <div class="card"><h2>Markouts by side</h2><p class="sub">bp before fees, ± 1 standard error, pooled over the selected coins by number of fills (pick one coin to see it alone); the dashed line is the fee a fill must clear</p><div class="chart" id="ex-side"></div></div>
         <div class="card"><h2>Markouts by action</h2><p class="sub">JOIN = resting at the best price, BACK = one tick behind</p><div class="chart" id="ex-action"></div></div>
       </div>
+      <div class="card" style="margin-top:16px"><h2>Fill rate</h2><p class="sub">Fills per hour while an order was resting; the label is the share of the day with one resting (uptime)</p><div class="chart short" id="ex-rate"></div></div>
       <div class="card" style="margin-top:16px"><h2>Queue wait</h2><p class="sub">Seconds from an order going live to its fill</p><div class="chart" id="ex-wait"></div></div>
       <div class="card" style="margin-top:16px"><h2>Fill quality per coin</h2><p class="sub">Fill-weighted over the selected days</p><div class="table-wrap" id="ex-table"></div></div>
     </div>
@@ -346,8 +346,8 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
       <p class="view-intro">How much can I lose? Inventory against its ±10-lot cap, drawdowns, and what a sudden price gap would cost.</p>
       <div class="tiles" id="rk-tiles"></div>
       <div class="grid g2">
-        <div class="card"><h2>Inventory</h2><p class="sub">Lots held (5-minute points); red dashes are the cap</p><div class="chart" id="rk-inv"></div></div>
-        <div class="card"><h2>Time at each inventory level</h2><p class="sub">Share of time</p><div class="chart" id="rk-invdist"></div></div>
+        <div class="card"><h2>Inventory</h2><p class="sub">Lots held (5-minute points, last 3 days of the run); red dashes are the cap</p><div class="chart" id="rk-inv"></div></div>
+        <div class="card"><h2>Time at each inventory level</h2><p class="sub">Share of the whole run, from the full-resolution record</p><div class="chart" id="rk-invdist"></div></div>
       </div>
       <div class="card" style="margin-top:16px"><h2>Drawdown</h2><p class="sub">Cumulative net P&amp;L and its fall from the running peak (USD)</p><div class="chart" id="rk-dd"></div></div>
       <div class="card" style="margin-top:16px"><h2>Stress</h2><p class="sub">Loss if the price gaps against a full position</p><div class="table-wrap" id="rk-stress"></div></div>
@@ -361,10 +361,10 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
     <p class="desk-msg" id="desk-msg-model-health" hidden></p>
     <div id="desk-body-model-health">
       <p class="view-intro">Is the model still right about itself? What the agent learned a fill is worth in each market state, whether its predictions come true, and which setting it ran.</p>
-      <div class="card"><h2>Edge table</h2><p class="sub">Learned net edge per fill (bp, after fee) by book imbalance (rows) and volatility (columns). * = fewer than 30 fills. Red means quoting there loses money.</p><div class="edge-grid" id="md-edge"></div></div>
+      <div class="card"><h2>Edge table</h2><p class="sub">Learned net edge per fill (bp, after fee) by book imbalance (rows) and volatility (columns). * = fewer than 30 fills. Red means quoting there loses money. Colour scale fixed at ±20 bp.</p><div class="edge-grid" id="md-edge"></div></div>
       <div class="grid g2" style="margin-top:16px">
         <div class="card"><h2>Predicted vs realised edge</h2><p class="sub">5 equal-size bins of predicted net edge; below the diagonal = too optimistic</p><div class="chart" id="md-calib"></div></div>
-        <div class="card"><h2>Live setting over time</h2><p class="sub">Which of the 12 menu entries the agent followed; diamonds mark switches</p><div class="chart" id="md-arms"></div></div>
+        <div class="card"><h2>Live setting over time</h2><p class="sub" id="md-arms-sub">Which of the 12 menu entries the agent followed</p><div class="chart" id="md-arms"></div></div>
       </div>
       <div class="card" style="margin-top:16px"><h2>Arm scores</h2><p class="sub">Latest decayed scores of the 12 settings</p><div class="table-wrap" id="md-scores"></div></div>
     </div>
@@ -372,7 +372,11 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
   <section class="view" id="view-signals">
     <p class="desk-msg" id="desk-msg-signals" hidden></p>
     <div id="desk-body-signals">
-      <div class="pending"><b>Next on the build list (Task D9).</b> Do the inputs still predict? Net edge by book-imbalance and volatility bucket.</div>
+      <p class="view-intro">Do the model's inputs still predict? Net edge per fill by book imbalance and by volatility, pooled over the selected coins and weighted by fills.</p>
+      <div class="grid g2">
+        <div class="card"><h2>By book imbalance</h2><p class="sub">Net edge per fill (bp, after fee), ±1.96 se; hollow = fewer than 30 fills</p><div class="chart short" id="sg-imb"></div></div>
+        <div class="card"><h2>By volatility</h2><p class="sub">Net edge per fill (bp, after fee), ±1.96 se; hollow = fewer than 30 fills</p><div class="chart short" id="sg-vol"></div></div>
+      </div>
     </div>
   </section>
   </div>
@@ -621,6 +625,7 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
 <script src="js/views/book.js"></script>
 <script src="js/live.js"></script>
 <script src="js/views/data.js"></script>
+<script src="js/views/signals.js"></script>
 <script src="js/views/desk_pending.js"></script>
 <script>boot();</script>
 </body>

@@ -43,6 +43,21 @@ function drawExecWait(b) {
   deskPlot("ex-wait", tr, { barmode: "group", xaxis: axis("Queue wait, order live to fill (s)"), yaxis: axis("Fills") });
 }
 
+/* Fills per hour with an order resting, and the share of the day one was resting (uptime). */
+function drawExecRate(b) {
+  const f = Source.filter, ds = filteredDays(b);
+  if (!ds.length) return emptyPanel("ex-rate");
+  const syms = f.symbol === "ALL" ? Source.symbolsOf(b) : [f.symbol];
+  const rows = syms.map(s => { const d = ds.filter(x => x.symbol === s && isNum(x.uptime) && x.uptime > 0);
+    if (!d.length) return null;
+    const fills = d.reduce((a, x) => a + (x.fills || 0), 0), hrs = d.reduce((a, x) => a + 24 * x.uptime, 0);
+    return { s, perHour: fills / hrs, up: d.reduce((a, x) => a + x.uptime, 0) / d.length }; }).filter(Boolean);
+  if (!rows.length) return emptyPanel("ex-rate", "No fills: the agent stayed out, or uptime was not recorded");
+  deskPlot("ex-rate", [{ type: "bar", name: "Fills per hour with an order resting", x: rows.map(r => r.s.replace("USDT", "")), y: rows.map(r => r.perHour), marker: { color: SERIES[0] },
+      text: rows.map(r => `${pct(r.up)} up`), textposition: "outside", hovertemplate: "%{x}: %{y:.1f} fills/h<extra></extra>" }],
+    { showlegend: false, yaxis: axis("fills per hour"), xaxis: axis("") });
+}
+
 function drawExecTable(b) {
   const f = Source.filter, ds = filteredDays(b);
   if (!ds.length) return emptyPanel("ex-table");
@@ -66,6 +81,6 @@ function drawExecution() {
   if (!b) return;
   drawMarkoutChart(b, "ex-side", "side", "side");
   drawMarkoutChart(b, "ex-action", "action", "");
-  drawExecWait(b); drawExecTable(b);
+  drawExecWait(b); drawExecRate(b); drawExecTable(b);
 }
 register("execution", drawExecution);
