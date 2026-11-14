@@ -1,5 +1,5 @@
-/* desk_pending.js: placeholders for Desk views not built yet (Dashboard Guide Tasks D5-D11).
-   Each later task creates js/views/<name>.js, registers its view, and removes it from this list. */
-["signals", "market", "simlive", "health"].forEach(v => {
+/* desk_pending.js: placeholders for Desk views not built yet. Every view now has its own file; kept so a future
+   view can be registered here first and moved out when it is built (list the view ids below). */
+[].forEach(v => {
   if (!draw[v]) register(v, () => deskBundle(v));
 });

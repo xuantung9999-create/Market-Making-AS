@@ -3,7 +3,7 @@
 /* ---------- Edit these for your CV / website ---------- */
 const SITE = {
   stage: "v2 · Gate A evaluated",
-  testsPassed: 181,
+  testsPassed: 329,
   author: "Xuân Tùng",
   github: "",      // e.g. "https://github.com/your-name/as-market-maker"
   linkedin: "",    // e.g. "https://www.linkedin.com/in/your-name"
@@ -61,37 +61,74 @@ const plot = (id, data, lay) => Plotly.react(id, data, layout(lay), CONFIG);
 
 /* ======================= Router =======================
    Views register themselves: register(name, drawFn). A view is drawn the first time it is shown
-   and again only after markDirty(name). */
+   and again only after markDirty(name). Tabs group views: a tab with several views shows them as
+   sub-tabs, and the hash is #tab or #tab/view. Old hashes (#model, #signals, #real-data ...) still work. */
 const VIEWS = [];
 const dirty = {};
 const draw = {};
-const DEFAULT_VIEW = { name: "simulator" };
+const TABS = {
+  "overview":     { label: "Verdict", views: ["overview"] },
+  "live":         { label: "Live", views: [["live", "Market feed"], ["pcstatus", "PC status"]] },
+  "book":         { label: "Market book", views: [["book", "Order book"], ["market", "Universe"]] },
+  "pnl":          { label: "P&L", views: ["pnl"] },
+  "execution":    { label: "Execution", views: ["execution"] },
+  "risk":         { label: "Risk", views: ["risk"] },
+  "model-health": { label: "Model", views: [["model-health", "Edge table"], ["signals", "Signals"]] },
+  "data":         { label: "Data", views: [["health", "Recorder health"], ["simlive", "Sim vs live"]] },
+  "simulator":    { label: "Simulator", views: [["simulator", "Playground"], ["model", "How it quotes"], ["replication", "Paper replication"]] },
+  "archive":      { label: "Research archive", views: [["real-data", "Real data"], ["backtest", "Backtest"], ["universe", "BTC to micro caps"],
+                                                       ["informed", "Informed traders"], ["tuning", "Tuning and signals"]] },
+  "about":        { label: "About", views: ["about"] },
+};
+const viewIds = t => TABS[t].views.map(v => Array.isArray(v) ? v[0] : v);
+const VIEW_TAB = {};
+Object.keys(TABS).forEach(t => viewIds(t).forEach(v => { VIEW_TAB[v] = t; }));
+const DEFAULT_VIEW = { name: window.PUBLIC_SITE ? "about" : "overview" };   // the public copy opens on About
 function register(name, fn, initiallyDirty = true) {
   if (!VIEWS.includes(name)) VIEWS.push(name);
   draw[name] = fn; dirty[name] = initiallyDirty;
 }
 function markDirty(name) { dirty[name] = true; if (name === current) renderVisible(); }
-let current = null;
+let current = null, currentTab = null;
 function renderVisible() { if (current && dirty[current]) { dirty[current] = false; draw[current](); } }
-function show(view) {
-  if (!VIEWS.includes(view)) view = DEFAULT_VIEW.name;
-  current = view;
+/* "#simulator/replication" | "#replication" | "#simulator" -> {tab, view} */
+function resolveHash(h) {
+  const [a, b] = String(h || "").replace(/^#/, "").split("/");
+  let tab = TABS[a] ? a : VIEW_TAB[a], view = null;
+  if (!tab) return { tab: DEFAULT_VIEW.name, view: DEFAULT_VIEW.name };
+  const ids = viewIds(tab);
+  if (!TABS[a]) view = a;
+  else if (b && ids.includes(b)) view = b;
+  return { tab, view: view || ids[0] };
+}
+/* Segmented control that shows one nested view of a tab; the choice lives in the hash. */
+function subtabs(hostId, items, tab) {
+  const host = $(hostId);
+  if (!host) return;
+  host.innerHTML = items.map(([id, label]) => `<a href="#${tab}/${id}" data-sub="${id}" role="tab">${esc(label)}</a>`).join("");
+}
+function show(hash) {
+  const { tab, view } = resolveHash(hash);
+  current = view; currentTab = tab;
   document.body.classList.toggle("desk-mode", DESK_VIEWS.includes(view));
+  document.body.classList.toggle("verdict-mode", tab === "overview");
+  document.querySelectorAll("div.tab-wrap").forEach(w => w.classList.toggle("active", w.dataset.tab === tab));
   document.querySelectorAll("section.view").forEach(s => s.classList.toggle("active", s.id === "view-" + view));
-  document.querySelectorAll("nav.tabs a").forEach(a => { if (a.dataset.view === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  document.querySelectorAll("nav.tabs a").forEach(a => { if (a.dataset.view === tab) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+  document.querySelectorAll(`#sub-${tab} a`).forEach(a => { if (a.dataset.sub === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
   if (dirty[view]) renderVisible();
   else document.querySelectorAll(`#view-${view} .chart`).forEach(el => el.data && Plotly.Plots.resize(el));
 }
-window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+window.addEventListener("hashchange", () => show(location.hash));
 function boot() {
+  Object.keys(TABS).forEach(t => { if (TABS[t].views.some(Array.isArray)) subtabs("sub-" + t, TABS[t].views.map(v => Array.isArray(v) ? v : [v, TABS[t].label]), t); });
   initShell();
-  if (typeof Source !== "undefined" && Source.list().length) DEFAULT_VIEW.name = "overview";
-  show(location.hash.slice(1) || DEFAULT_VIEW.name);
+  show(location.hash || "#" + DEFAULT_VIEW.name);
 }
 
 /* ======================= Desk helpers =======================
    Shared by every Desk view. Profit green and loss red are used for nothing else on Desk views. */
-const DESK_VIEWS = ["overview", "pnl", "execution", "risk", "model-health", "signals", "market", "simlive", "health"];
+const DESK_VIEWS = ["pnl", "execution", "risk", "model-health", "signals", "simlive", "market"];   // views that read the selected run
 const PROFIT = "#22c55e", LOSS = "#ef4444";
 const KIND = {
   backtest:    { label: "SIM",          c: "#94a3b8" },
@@ -164,9 +201,36 @@ function deskBundle(view) {
 }
 
 /* ======================= Desk shell: run selector, compare, filters ======================= */
+const SHOW_DEMO = /[?&]demo=1\b/.test(location.search);
+function selectableRuns() {
+  return Source.list().filter(r => r.run_id !== Source.VERDICT_ID && r.kind !== "book" && (SHOW_DEMO || r.kind !== "demo"));
+}
+/* Shared time range for the over-time charts (P&L daily, Risk inventory and drawdown): 3d / 14d / all, default all. */
+const RANGE = { days: "all" };
+function rangeX(lastIso) {
+  if (RANGE.days === "all" || !lastIso) return null;
+  const end = Date.parse(String(lastIso).length <= 10 ? lastIso + "T23:59:59Z" : lastIso);
+  return isFinite(end) ? [new Date(end - RANGE.days * 864e5).toISOString(), new Date(end).toISOString()] : null;
+}
+function initRange() {
+  const bar = document.querySelector(".runbar");
+  if (!bar || $("range-btns")) return;
+  const wrap = document.createElement("span");
+  wrap.id = "range-btns"; wrap.className = "range-btns"; wrap.setAttribute("role", "group"); wrap.setAttribute("aria-label", "Time range");
+  wrap.innerHTML = '<span class="run-meta">Range</span>' + [["3d", 3], ["14d", 14], ["all", "all"]].map(([l, d]) => `<button type="button" data-d="${d}" aria-pressed="${String(d) === String(RANGE.days)}">${l}</button>`).join("");
+  wrap.addEventListener("click", e => {
+    const d = e.target.dataset && e.target.dataset.d;
+    if (!d) return;
+    RANGE.days = d === "all" ? "all" : +d;
+    wrap.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.d === d)));
+    ["pnl", "risk"].forEach(markDirty);
+  });
+  bar.appendChild(wrap);
+}
 function initShell() {
+  initRange();
   if (typeof Source === "undefined") return;
-  const runs = Source.list();
+  const runs = selectableRuns();
   const sel = $("run-select"), cmp = $("run-compare");
   if (!sel) return;
   const opt = r => `<option value="${esc(r.run_id)}">${esc(r.label)} · ${esc((KIND[r.kind] || {}).label || r.kind)} · ${esc(r.built_utc)} UTC</option>`;
@@ -177,7 +241,9 @@ function initShell() {
   $("f-symbol").addEventListener("change", e => Source.setFilter({ symbol: e.target.value }));
   $("f-variant").addEventListener("change", e => Source.setFilter({ variant: e.target.value }));
   document.addEventListener("runchange", onRunChange);
-  const first = Source.defaultRunId();
+  Source.loadVerdict();
+  Source.loadBook();
+  const first = Source.defaultRunId(SHOW_DEMO);
   if (first) { sel.value = first; Source.select(first); }
   else onRunChange();
 }
@@ -186,6 +252,8 @@ function onRunChange() {
   $("run-badge").innerHTML = b ? badge(b.kind) : "";
   $("run-meta").textContent = b ? `${b.built_utc} UTC · ${ago(b.built_utc)} · ${Source.symbolsOf(b).length} symbols · ${new Set(b.days.map(d => d.date)).size} days` : "";
   $("demo-banner").hidden = !(b && b.kind === "demo");
+  const vt = Source.verdict && Source.verdict.takeaways && Source.verdict.takeaways.headline;
+  $("bar-verdict").textContent = vt || "";
   const cb = Source.compare;
   $("compare-badge").innerHTML = cb ? badge(cb.kind) : "";
   const fs = $("f-symbol"), fv = $("f-variant");
@@ -194,6 +262,6 @@ function onRunChange() {
   fs.value = Source.filter.symbol;
   fv.innerHTML = vars.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join("");
   if (Source.filter.variant) fv.value = Source.filter.variant;
-  DESK_VIEWS.forEach(v => { if (draw[v]) dirty[v] = true; });
+  DESK_VIEWS.concat(["overview", "book", "health"]).forEach(v => { if (draw[v]) dirty[v] = true; });
   renderVisible();
 }

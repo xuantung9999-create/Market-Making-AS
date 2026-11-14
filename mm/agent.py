@@ -30,7 +30,8 @@ import numpy as np
 from dataclasses import dataclass, replace
 from typing import Optional
 
-from mm.edge import EdgePolicy, EdgeTable, bucket_of, net_edge_bp
+from mm.edge import EdgePolicy, EdgeTable, net_edge_bp
+from mm.edge import book_state as book_state_fn
 from mm.features import FeatureEngine
 from mm.queue_sim import Action, Fixed, MarketState, QSConfig, QSResult, QueueSim, _drive
 
@@ -73,17 +74,23 @@ class _LivePolicy:
         if isinstance(st.feat, dict):            # record the table's prediction with the order (dashboard calibration)
             for side, act, key in ((1, acts[0], "pred_bid"), (-1, acts[1], "pred_ask")):
                 if act != Action.OUT:
-                    st.feat[key] = a.table.estimate(act, bucket_of(st.feat, side))[0]
+                    st.feat[key] = a.table.estimate(act, a.table.bucket(st.feat, side))[0]
         return acts
 
 
 class CalibrationAgent:
-    def __init__(self, cfg: AgentConfig, sim_cfg: QSConfig, tick: float, table: Optional[EdgeTable] = None):
+    def __init__(self, cfg: AgentConfig, sim_cfg: QSConfig, tick: float, table: Optional[EdgeTable] = None,
+                 book_state: bool = False, p_toxic_fn=None):
+        """``book_state=True`` (v2.1 Task 16) adds the queue-ahead and regime features to every decision and
+        uses the 18-cell book-state table; ``p_toxic_fn(ts_us) -> float`` is the causal regime feed."""
         self.cfg, self.sim_cfg, self.tick = cfg, sim_cfg, float(tick)
-        self.table = table if table is not None else EdgeTable()
+        self._book_state, self.p_toxic_fn = bool(book_state), p_toxic_fn
+        self._typ: dict = {}                 # time-decayed typical displayed size per side
+        self.table = table if table is not None else (EdgeTable(state_fn=book_state_fn) if book_state else EdgeTable())
         self.features = FeatureEngine(tick)
         shadow_cfg = replace(sim_cfg, q_max=None)
-        mk = lambda pol, c: QueueSim(pol, c, tick, self.features, feed_features=False)
+        extra = self._extra if book_state else None
+        mk = lambda pol, c: QueueSim(pol, c, tick, self.features, feed_features=False, feat_extra=extra)
         self.shadows = [mk(Fixed(Action.JOIN, Action.JOIN, name="Shadow JOIN"), shadow_cfg),
                         mk(Fixed(Action.BACK, Action.BACK, name="Shadow BACK"), shadow_cfg)]
         self.arms = [mk(EdgePolicy(self.table, s.e_min_bp, s.z, s.gamma_bp,
@@ -106,6 +113,20 @@ class CalibrationAgent:
         self._arm_pnl0 = [0.0] * n
         self._arm_fills0 = [0] * n
 
+    # ------------------------------------------------------------------ book-state features
+    _TYP_HL_S = 1800.0
+
+    def _track(self, ts: int, bid_qty: float, ask_qty: float) -> None:
+        for key, q in (("bid", float(bid_qty)), ("ask", float(ask_qty))):
+            m, last = self._typ.get(key, (q, ts))
+            w = 1.0 - 0.5 ** (max(ts - last, 0) / 1e6 / self._TYP_HL_S)
+            self._typ[key] = (m + w * (q - m), ts)
+
+    def _extra(self, ts: int, bid_qty: float, ask_qty: float) -> dict:
+        tb, ta = self._typ.get("bid", (0.0, 0))[0], self._typ.get("ask", (0.0, 0))[0]
+        return {"qa_bid": bid_qty / tb if tb > 0 else 1.0, "qa_ask": ask_qty / ta if ta > 0 else 1.0,
+                "p_toxic": float(self.p_toxic_fn(ts)) if self.p_toxic_fn is not None else 0.0}
+
     # ------------------------------------------------------------------ events
     def _pre(self, ts: int) -> None:
         """Learn from every shadow fill whose horizon has passed, using the mid known now."""
@@ -121,6 +142,8 @@ class CalibrationAgent:
         ts = int(ts_us)
         self._pre(ts)
         self.features.on_book(ts, bid, ask, bid_qty, ask_qty)
+        if self._book_state:
+            self._track(ts, bid_qty, ask_qty)
         self._mid = (bid + ask) / 2.0
         for s in self._sims:
             s.on_book(ts, bid, ask, bid_qty, ask_qty)
@@ -135,7 +158,7 @@ class CalibrationAgent:
             for f in s.on_trade(ts, price, qty, side):
                 feat = {k[2:]: v for k, v in f.items() if k.startswith("f_")}
                 self._learn.append((f["ts_us"] + horizon, Action(f["action"]),
-                                    bucket_of(feat, f["side"]), f["side"], f["price"]))
+                                    self.table.bucket(feat, f["side"]), f["side"], f["price"]))
                 out.append(f)
         for s in self.arms:
             s.on_trade(ts, price, qty, side)

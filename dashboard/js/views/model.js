@@ -8,7 +8,7 @@ function drawModelEdge(b) {
   if (!syms.length) return emptyPanel("md-edge");
   host.classList.remove("is-empty");
   host.innerHTML = syms.flatMap(s => ["JOIN", "BACK"].map(a => `<div class="chart small" id="md-edge-${s}-${a}"></div>`)).join("");
-  const lim = Math.max(1, ...e.map(r => Math.abs(r.mean)));
+  const lim = 20;   // fixed at ±20 bp so every panel and every run compares
   syms.forEach(s => ["JOIN", "BACK"].forEach(a => {
     const id = `md-edge-${s}-${a}`, rows = e.filter(r => r.symbol === s && r.action === a);
     if (!rows.length) return emptyPanel(id, `${s} ${a}: not enough fills to estimate`);
@@ -40,10 +40,13 @@ function drawModelArms(b) {
   if (!rows.length) { emptyPanel("md-arms"); emptyPanel("md-scores"); return; }
   const syms = [...new Set(rows.map(r => r.symbol))];
   const tr = syms.map((s, i) => { const r = rows.filter(x => x.symbol === s);
-    return { x: r.map(x => x.ts), y: r.map(x => x.live_arm), name: s, mode: "lines", line: { shape: "hv", color: SERIES[i % SERIES.length] }, hovertemplate: `${s}: arm %{y}<extra></extra>` }; });
-  const sw = rows.filter(r => r.switched);
-  if (sw.length) tr.push({ x: sw.map(r => r.ts), y: sw.map(r => r.live_arm), mode: "markers", name: "switch", marker: { symbol: "diamond", size: 9, color: C.text } });
-  deskPlot("md-arms", tr, { xaxis: axis("UTC", { type: "date" }), yaxis: axis("Live menu entry (0–11)", { dtick: 1, range: [-0.5, 11.5] }) });
+    return { x: r.map(x => x.ts), y: r.map(() => s.replace("USDT", "")), name: s, mode: "markers", showlegend: false,
+             marker: { symbol: "square", size: 16, cmin: 0, cmax: 11, colorscale: "Viridis", color: r.map(x => x.live_arm),
+                       colorbar: i ? undefined : { title: { text: "arm" }, thickness: 10 }, line: { width: 0 } },
+             text: r.map(x => `arm ${x.live_arm}${x.switched ? " (switch)" : ""}`), hovertemplate: `${s} %{x}: %{text}<extra></extra>` }; });
+  const sw = syms.map(s => `${s.replace("USDT", "")}: ${rows.filter(r => r.symbol === s && r.switched).length}`).join(", ");
+  $("md-arms-sub").textContent = `One square per recorded interval, coloured by the live setting (0–11); switches of setting: ${sw}`;
+  deskPlot("md-arms", tr, { xaxis: axis("UTC", { type: "date" }), yaxis: axis(""), hovermode: "closest" });
   const last = syms.map(s => rows.filter(r => r.symbol === s).slice(-1)[0]);
   fillHtml("md-scores", `<table><thead><tr><th>Arm</th>${last.map(r => `<th>${esc(r.symbol)}</th>`).join("")}</tr></thead><tbody>${
     [...Array(12).keys()].map(a => `<tr><td>${a}${last.some(r => r.live_arm === a) ? " (live)" : ""}</td>${last.map(r => `<td class="${pnlCls(r.scores[a])}">${sign(r.scores[a], 3)}</td>`).join("")}</tr>`).join("")

@@ -1,8 +1,37 @@
-# Avellaneda-Stoikov Market Maker (BTCUSDT)
+# Crypto Market Making: from Avellaneda-Stoikov to a queue-aware, self-calibrating quoter
 
-A from-scratch implementation of the Avellaneda & Stoikov (2008) market-making model: synthetic replication, real-data backtest on Binance, parameter calibration and an interactive HTML dashboard.
+**Live dashboard:** https://xuantung9999-create.github.io/Market-Making-AS/ · Author: Nguyễn Xuân Tùng ([LinkedIn](https://www.linkedin.com/in/tungtea-nguyen) · [Email](mailto:xuantung9702@gmail.com) · [Telegram](https://t.me/Oooop1q))
 
-**Status:** Day 10 of 14 — quoting core (A-S and GLFT), paper replication, Binance data pipeline, event-driven backtester, per-coin calibration for 12 coins (BTC to micro caps), walk-forward defences against informed traders, a parameter sweep, cross-asset signals and a live order-book study (66 tests). Findings: `notes/week1_review.md`, `notes/day8_small_caps.md`, `notes/day9_informed_flow.md`, `notes/day10_tuning_signals.md`.
+A market-making research project on Binance spot, built from the Avellaneda & Stoikov (2008) paper up to an event-driven, queue-aware simulator with an online calibration agent, a paper trader, a testnet execution layer and an interactive dashboard. 329 tests.
+
+**The result is negative, and that is the finding.** A candidate edge on tick-constrained micro caps (+16 bp per dollar traded on one day) was put through a pre-registered test: 60 days, three coins, a queue model, 300 ms latency and base-tier fees. It did not survive.
+
+| 13 Sep - 11 Nov 2026, COTI / ANKR / SKL, always quoting the best price | Before fees | After 10 bp maker fee | t (per coin-day) |
+| --- | ---: | ---: | ---: |
+| Queue = 1.0x displayed size (headline) | -8.2 bp | -18.2 bp | -8.4 |
+| Queue = 0.5x (optimistic) | -7.0 bp | -17.0 bp | -8.6 |
+| Queue = 2.0x (stress) | -9.0 bp | -19.0 bp | -8.1 |
+| Front of queue, 100 ms (the earlier assumption) | -1.3 bp | -11.3 bp | -8.5 |
+
+Basis points per dollar traded, 180 coin-days (`results/queue_baseline.csv`). The t column treats each coin-day as one observation; pooling the three coins by date (60 dates) gives t = -9.1 at the headline queue, the figure on the dashboard's Verdict tab. The self-calibrating agent, which learns the net edge of a fill per market state from shadow orders, concluded that every state it could see loses money and declined to trade on all 159 counted coin-days (**Gate A: fail**, `results/gate_a.json`).
+
+**What was built**
+
+- v1 (Days 1-10): A-S and GLFT quoting core, paper replication, Binance data pipeline, bar backtester, per-coin calibration for 12 coins, informed-flow defences, parameter sweep, lead-lag signals.
+- v2 (`docs/BUILD_GUIDE.md`, Tasks 0-11): queue-aware engine shared by backtest, walk-forward and paper trading; edge table; calibration agent; tick-constraint screener; multi-symbol recorder; paper trader with exact replay; daily supervisor.
+- Testnet trader: the same agent sending real post-only orders on the Binance spot testnet, to prove the execution code.
+
+**The dashboard** (`dashboard/`, no build step; the published copy is made by `python -m scripts.publish_dashboard`). The Verdict tab answers "did it work?" in one screen; the detail tabs (P&L, Execution, Risk, Model, Data) read the selected run.
+
+![Verdict tab: headline, forest plot by coin and queue assumption, gate scoreboard](docs/img/verdict.png)
+![Execution tab: markouts by side and action against the 10 bp fee line](docs/img/execution.png)
+![Market book > Universe: the screener with tick size, spread and volume per coin](docs/img/universe.png)
+
+The recorded-order-book views (Market book > Order book, Live, Data > Recorder health and tape validation) fill in once the recorder has run for a few days; until then they say so instead of showing placeholder numbers.
+
+**What is next:** `docs/SPEC_V2_1.md`. v2 ran on a book inferred from trades, so it never saw real book imbalance or queue sizes. v2.1 tests that one remaining lever on recorded order-book data. The code is built and tested (`mm/markov.py` Markov microprice, `mm/queue_model.py` queue chain with cancels, `mm/regime.py` regime filter, the 18-cell book-state edge table with Gate A', and the hedge pre-check), each with a pass rule fixed in advance. None of the pass rules has been evaluated yet: they need several weeks of recorded book data per coin. The BTC-perpetual hedge simulation (Task 18) is only built if the pre-check says go.
+
+**How it was built:** the design, test rules and pass/fail gates are written as specs (`docs/`), and most of the code was implemented by AI models working to those specs, one task at a time, with tests first. Findings by day: `notes/`. Build log: `docs/progress/v2_ledger.md`.
 
 ## Run it with Docker (no Python needed)
 
@@ -93,6 +122,12 @@ mm/calibrate.py       per-coin tick, spread, sigma, A, k, two-part (core/tail) f
 mm/flow.py            past-only flow features (imbalance, momentum, vol ratio, sweeps) and the alpha model
 mm/protect.py         A-S or GLFT with defences: lean on predicted flow, kill switch; matches mm.strategy.quote
 mm/metrics.py         P&L per volume, markouts, adverse selection, Sharpe, drawdown
+mm/tape.py            book tapes (inferred from trades, or recorded) and the merged event stream
+mm/features.py        incremental, past-only features: book imbalance, microprice, flow, volatility ratio
+mm/queue_sim.py       v2 engine: queue position, latency, fills, exact P&L identity
+mm/edge.py            net edge per fill, EdgeTable (shrunk, forgetting), EdgePolicy
+mm/agent.py           calibration agent: shadow orders, 12-setting menu, loss stop
+mm/screen.py          which coins are tick-constrained
 mm/paper.py           paper trader: live mainnet data, simulated fills, no orders sent
 mm/testnet.py         testnet trader: the same agent, real post-only orders on the Binance spot testnet
 notes/derivation.md   Day 1 derivation of the model
@@ -123,6 +158,8 @@ A 32-setting sweep over 48 out-of-sample coin-days: the kill switch dominates (l
 ![walk-forward](results/day9_walkforward.png)
 
 ## From BTC to micro caps (Day 8)
+
+> Superseded: the micro-cap result below came from one day and a simulator with no queue. The 60-day queue-aware test at the top of this page reverses it.
 
 Twelve coins, tiers from measured Binance spot volume ($1.2B/day BTC down to $0.1M/day IOTX), calibrated on 9 Nov and backtested out of sample on 10 Nov. The tick size relative to price is the biggest difference: 0.001 bp for BTC, 26–27 bp for ANKR and SKL, which are tick-constrained. Large and mid caps lose to adverse selection like BTC; the only statistically meaningful positive result is on tick-constrained micro caps (ANKR: +16 bp per dollar traded, 60-s markout t = 2.2), where queue position decides the outcome. One day and a few hundred fills: promising, not proven. Advice on what changes for small caps: `notes/day8_small_caps.md`.
 

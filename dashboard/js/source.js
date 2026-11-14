@@ -32,10 +32,12 @@ const Source = (() => {
     return pending[runId];
   }
 
-  function defaultRunId() {
-    const runs = list();
-    const real = runs.find(r => r.kind !== "demo");
-    return (real || runs[0] || {}).run_id || null;
+  const VERDICT_ID = "pub-verdict";
+  /* The queue baseline is the run the detail tabs open on; the verdict bundle and the demo run are never the default. */
+  function defaultRunId(allowDemo = false) {
+    const runs = list().filter(r => r.run_id !== VERDICT_ID && r.kind !== "book" && (allowDemo || r.kind !== "demo"));
+    const qb = runs.find(r => r.kind === "backtest");
+    return ((qb || runs[0] || {}).run_id) || null;
   }
 
   function variantsOf(b) {
@@ -48,13 +50,25 @@ const Source = (() => {
     for (const d of (b && b.days) || []) if (!s.includes(d.symbol)) s.push(d.symbol);
     return s;
   }
-  function defaultVariant(b) { const v = variantsOf(b); return v.includes("agent") ? "agent" : (v[0] || null); }
+  function defaultVariant(b) { const v = variantsOf(b); return v.includes("q1.0") ? "q1.0" : v.includes("agent") ? "agent" : (v[0] || null); }
 
   const api = {
-    current: null, compare: null, error: null,
+    current: null, compare: null, error: null, verdict: null, verdictError: null, book: null, bookError: null, VERDICT_ID,
     filter: { symbol: "ALL", variant: null },
     list, load, defaultRunId, variantsOf, symbolsOf,
     fire() { document.dispatchEvent(new CustomEvent("runchange")); },
+    async loadVerdict() {
+      if (!list().some(r => r.run_id === VERDICT_ID)) { api.verdictError = "No verdict bundle yet. Run run_build_verdict.bat."; api.fire(); return; }
+      try { api.verdict = await load(VERDICT_ID); } catch (e) { api.verdictError = String(e.message || e); }
+      api.fire();
+    },
+    /* The newest recorded-book bundle, if the index lists one. */
+    async loadBook() {
+      const entry = list().find(r => r.kind === "book");
+      if (!entry) { api.bookError = "No recorded book yet. Run the recorder for a few days, then run_build_book.bat."; api.fire(); return; }
+      try { api.book = await load(entry.run_id); } catch (e) { api.bookError = String(e.message || e); }
+      api.fire();
+    },
     async select(runId) {
       api.error = null;
       try {

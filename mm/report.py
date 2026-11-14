@@ -25,6 +25,7 @@ from __future__ import annotations
 import json
 import math
 import re
+from bisect import bisect_right
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -36,7 +37,7 @@ import pandas as pd
 from mm.metrics import max_drawdown
 
 SCHEMA = 1
-KINDS = ("backtest", "walkforward", "paper", "live", "demo")
+KINDS = ("backtest", "walkforward", "paper", "live", "demo", "book")
 REQUIRED = ("schema", "run_id", "kind", "label", "built_utc", "config", "days")
 DAY_KEYS_REQUIRED = ("symbol", "date", "variant")
 MIN_FILLS = 20              # a day needs this many fills to enter the statistics
@@ -548,11 +549,14 @@ def _dumps(b: dict) -> str:
 
 def _index_entry(b: dict) -> dict:
     syms = []
-    for d in b["days"]:
-        if d["symbol"] not in syms:
+    for d in b["days"] or b.get("forest") or []:
+        if d["symbol"] not in syms and d["symbol"] != "ALL":
             syms.append(d["symbol"])
+    syms = syms or list(b.get("symbols") or [])
+    n_days = len({d["date"] for d in b["days"]}) if b["days"] else max(
+        [r.get("days_total", 0) for r in b.get("forest") or []] + [len({c["date"] for c in b.get("coverage") or []})] or [0])
     return {"run_id": b["run_id"], "kind": b["kind"], "label": b["label"], "built_utc": b["built_utc"],
-            "symbols": syms, "n_days": len({d["date"] for d in b["days"]})}
+            "symbols": syms, "n_days": n_days}
 
 
 def read_index(out_dir: str | Path = "dashboard/runs") -> list[dict]:
@@ -563,9 +567,12 @@ def read_index(out_dir: str | Path = "dashboard/runs") -> list[dict]:
     return json.loads(text[text.index("=") + 1:].strip().rstrip(";"))
 
 
-def write_bundle(b: dict, out_dir: str | Path = "dashboard/runs") -> Path:
+def write_bundle(b: dict, out_dir: str | Path = "dashboard/runs", slim: bool = True) -> Path:
     """Write ``<run_id>.js`` (loadable with a plain ``<script>`` tag, so the page works from a file)
-    and rewrite ``index.js``, newest first. Raises ``ValueError`` and writes nothing if invalid."""
+    and rewrite ``index.js``, newest first. Raises ``ValueError`` and writes nothing if invalid.
+    ``slim`` applies the bundle diet (``slim_bundle``) so a committed run stays under 3 MB."""
+    if slim:
+        b = slim_bundle(b)
     problems = validate_bundle(b)
     if problems:
         raise ValueError("invalid bundle:\n  " + "\n  ".join(problems))
@@ -579,6 +586,282 @@ def write_bundle(b: dict, out_dir: str | Path = "dashboard/runs") -> Path:
     (out / "index.js").write_text("window.RUN_INDEX = " + json.dumps(idx, indent=1, ensure_ascii=False) + ";\n",
                                   encoding="utf-8")
     return path
+
+
+# =============================================================================== verdict + diet
+# docs/DASHBOARD_REDESIGN.md section 5: a small bundle the Verdict tab loads first, and the thinning
+# that keeps every run file under 3 MB.
+HEADLINE_QUEUE = 1.0
+KEEP_DAYS = 3                      # days of 5-minute points kept in a slimmed run
+VERDICT_ID = "pub-verdict"
+_QUEUE_RE = re.compile(r"\bq(\d+(?:\.\d+)?)")
+
+
+def _queue_of(variant: str, default: Optional[float] = None) -> Optional[float]:
+    m = _QUEUE_RE.search(variant)
+    return float(m.group(1)) if m else default
+
+
+def _scenario(variant: str, queue_mult: Optional[float]) -> str:
+    if variant.startswith("bridge"):
+        return "front of queue, 100 ms (v1 assumption)"
+    if queue_mult is None:
+        return variant
+    tag = {0.5: " (optimistic)", 1.0: " (headline)", 2.0: " (stress)"}.get(queue_mult, "")
+    return (f"queue {queue_mult:g}x{tag}" if variant.startswith("q") else f"{variant}, queue {queue_mult:g}x{tag}")
+
+
+def _by_date(rows: list[dict]) -> list[dict]:
+    """One row per date, P&L, fees, notional and fills summed across symbols (the portfolio day)."""
+    agg: dict[str, dict] = {}
+    for r in rows:
+        a = agg.setdefault(r["date"], {"date": r["date"], "pnl": 0.0, "fees": 0.0, "notional": 0.0, "fills": 0})
+        a["pnl"] += r.get("pnl", 0.0); a["fees"] += r.get("fees", 0.0)
+        a["notional"] += r.get("notional", 0.0); a["fills"] += r.get("fills", 0)
+    return [agg[d] for d in sorted(agg)]
+
+
+def _ratio_stats(rows: list[dict]) -> dict:
+    """Net and gross edge in bp per dollar traded with standard errors, over counted days.
+
+    ``net_bp = sum(pnl) / sum(notional)``. Its standard error treats days as the independent unit
+    (delta method on the ratio): ``sqrt(D / (D - 1) * sum((p_i - r * n_i)^2)) / sum(n)``.
+    ``t`` is the t-statistic of daily P&L, as in ``summary_rows``. Days below ``MIN_FILLS`` fills do
+    not enter the statistics but their fills still count in ``fills``."""
+    counted = [r for r in rows if r.get("fills", 0) >= MIN_FILLS and r.get("notional", 0.0) > 0]
+    out: dict = {"days_total": len(rows), "n_days": len(counted), "fills": int(sum(r.get("fills", 0) for r in rows))}
+    if not counted:
+        return out
+    p = np.array([r["pnl"] for r in counted], float)
+    n = np.array([r["notional"] for r in counted], float)
+    g = p + np.array([r.get("fees", 0.0) for r in counted], float)
+    total_n, d = float(n.sum()), len(counted)
+    out["net_bp"] = float(p.sum() / total_n * 1e4)
+    out["gross_bp"] = float(g.sum() / total_n * 1e4)
+    out["hit_rate"] = float((p > 0).mean())
+    if d >= 2:
+        for key, x in (("net", p), ("gross", g)):
+            r = x.sum() / total_n
+            out[f"{key}_se"] = float(math.sqrt(d / (d - 1) * float(((x - r * n) ** 2).sum())) / total_n * 1e4)
+        std = float(p.std(ddof=1))
+        if d >= MIN_DAYS_SHARPE and std > 0:
+            out["t"] = float(p.mean() / (std / math.sqrt(d)))
+    return out
+
+
+def _group_days(days: list[dict]) -> tuple[dict, dict]:
+    per_sym: dict[tuple[str, str], list[dict]] = defaultdict(list)
+    for d in days:
+        if "pnl" in d:
+            per_sym[(d["symbol"], d["variant"])].append(d)
+    per_var: dict[str, list[dict]] = defaultdict(list)
+    for (_, var), rows in per_sym.items():
+        per_var[var] += rows
+    return per_sym, per_var
+
+
+def _labelled(sym: str, var: str, queue_mult: Optional[float]) -> dict:
+    qm = _queue_of(var, queue_mult)
+    row = {"symbol": sym, "variant": var}
+    if qm is not None:
+        row["queue_mult"] = qm
+    row["scenario"] = _scenario(var, qm)
+    return row
+
+
+def forest_rows(days: list[dict], queue_mult: Optional[float] = None) -> list[dict]:
+    """One row per variant for the pooled portfolio (``symbol == "ALL"``, first) and one per
+    symbol|variant: net and gross bp per dollar traded with standard errors, t, hit rate."""
+    per_sym, per_var = _group_days(days)
+    pooled = [{**_labelled("ALL", v, queue_mult), **_ratio_stats(_by_date(rows))} for v, rows in sorted(per_var.items())]
+    single = [{**_labelled(s, v, queue_mult), **_ratio_stats(sorted(rows, key=lambda r: r["date"]))}
+              for (s, v), rows in sorted(per_sym.items())]
+    return pooled + single
+
+
+def _compare_row(rows: list[dict], daily: list[dict]) -> dict:
+    out = {"fills": int(sum(r.get("fills", 0) for r in rows)), "pnl_total": float(sum(r.get("pnl", 0.0) for r in rows))}
+    st = _ratio_stats(daily)
+    if "net_bp" in st:
+        out["net_bp"] = st["net_bp"]
+    w = [(r["mk_60"], r["fills"]) for r in rows if r.get("fills", 0) > 0 and _finite(r.get("mk_60"))]
+    if sum(f for _, f in w):
+        out["mk_60"] = float(sum(v * f for v, f in w) / sum(f for _, f in w))
+    if daily:
+        out["max_dd"] = float(max_drawdown(np.cumsum([r["pnl"] for r in daily])))
+    return out
+
+
+def compare_rows(days: list[dict], queue_mult: Optional[float] = None) -> list[dict]:
+    """Totals per symbol|variant and pooled: fills, P&L over every day, net bp, fill-weighted 60 s
+    markout and maximum drawdown of cumulative daily P&L."""
+    per_sym, per_var = _group_days(days)
+    pooled = [{**_labelled("ALL", v, queue_mult), **_compare_row(rows, _by_date(rows))} for v, rows in sorted(per_var.items())]
+    single = [{**_labelled(s, v, queue_mult), **_compare_row(rows, sorted(rows, key=lambda r: r["date"]))}
+              for (s, v), rows in sorted(per_sym.items())]
+    return pooled + single
+
+
+def thin_curves(curves: dict, keep_days: int = KEEP_DAYS) -> dict:
+    """Every point of the last ``keep_days`` UTC days, and only the last point of each earlier day
+    (so the final cumulative value of every day is exact). ``keep_days=0`` gives daily points only.
+    Returns new curves; the input is not modified and thinning twice changes nothing."""
+    out = {}
+    for key, c in curves.items():
+        t = c.get("t") or []
+        if not t:
+            out[key] = {k: (list(v) if isinstance(v, list) else v) for k, v in c.items()}
+            continue
+        day = [x[:10] for x in t]
+        cutoff = ((datetime.fromisoformat(day[-1]) - timedelta(days=keep_days - 1)).strftime("%Y-%m-%d")
+                  if keep_days > 0 else "9999-99-99")
+        keep = [i for i in range(len(t)) if day[i] >= cutoff or i == len(t) - 1 or day[i + 1] != day[i]]
+        out[key] = {k: ([v[i] for i in keep] if isinstance(v, list) and len(v) == len(t) else v) for k, v in c.items()}
+    return out
+
+
+def thin_agent(rows: list[dict]) -> list[dict]:
+    """Every switch of live setting plus the last row of each symbol and day."""
+    last: dict[tuple[str, str], int] = {}
+    for i, r in enumerate(rows):
+        last[(r["symbol"], r["ts"][:10])] = i
+    keep = set(last.values()) | {i for i, r in enumerate(rows) if r.get("switched")}
+    return [rows[i] for i in sorted(keep)]
+
+
+def q_hist_of(curves: dict) -> dict:
+    """Share of the run's 5-minute points spent at each whole-lot inventory level, per symbol|variant.
+    Computed before thinning: end-of-day inventory alone would misstate how long a limit was hit."""
+    out = {}
+    for key, c in curves.items():
+        if key.startswith("ALL|") or not c.get("q"):
+            continue
+        levels, counts = np.unique(np.round(np.asarray(c["q"], float)).astype(int), return_counts=True)
+        out[key] = {"levels": [int(x) for x in levels], "share": [round(float(x), 8) for x in counts / counts.sum()]}
+    return out
+
+
+def slim_bundle(b: dict, keep_days: int = KEEP_DAYS) -> dict:
+    """The diet every producer script applies before writing: 5-minute curves only for the last
+    ``keep_days`` days, thinned agent history, and ``q_hist`` so the Risk tab keeps its inventory
+    distribution. Idempotent."""
+    out = dict(b)
+    if b.get("curves"):
+        if "q_hist" not in b:
+            out["q_hist"] = q_hist_of(b["curves"])
+        out["curves"] = thin_curves(b["curves"], keep_days)
+    if b.get("agent"):
+        out["agent"] = thin_agent(b["agent"])
+    return out
+
+
+def _gross_curve(net: dict, days: list[dict]) -> dict:
+    """Net curve plus cumulative fees through each point's date: the same curve before fees."""
+    fees: dict[str, float] = defaultdict(float)
+    for d in days:
+        fees[d["date"]] += d.get("fees", 0.0)
+    dates_, cum, run = sorted(fees), [], 0.0
+    for d in dates_:
+        run += fees[d]
+        cum.append(run)
+    pnl = []
+    for t, v in zip(net["t"], net["pnl"]):
+        i = bisect_right(dates_, t[:10])
+        pnl.append(round(v + (cum[i - 1] if i else 0.0), 6))
+    return {"t": list(net["t"]), "pnl": pnl}
+
+
+def verdict_bundle(runs: list[dict], run_id: str = VERDICT_ID) -> dict:
+    """The small bundle behind the Verdict tab, from the queue-baseline (``backtest``) runs and the
+    agent walk-forward (``walkforward``) runs. Join-touch comes from the baseline at every queue
+    assumption; the agent comes from the walk-forward at each of its queue assumptions; the curves
+    and the gate scoreboard come from the headline queue."""
+    qb = [r for r in runs if r["kind"] == "backtest"]
+    wf = [r for r in runs if r["kind"] == "walkforward"]
+    if not qb:
+        raise ValueError("verdict_bundle needs at least one backtest (queue baseline) run")
+    forest, compare, curves, gross, gates = [], [], {}, {}, None
+
+    def add_curves(run, variants, days):
+        pooled = {k: v for k, v in (run.get("curves") or {}).items() if k.startswith("ALL|")}
+        pooled = pooled or pooled_curves(run.get("curves") or {})
+        for key, c in thin_curves(pooled, keep_days=0).items():
+            if key.partition("|")[2] in variants:
+                curves[key] = {"t": c["t"], "pnl": c["pnl"]}
+                var = key.partition("|")[2]
+                gross[key] = _gross_curve(curves[key], [d for d in days if d["variant"] == var])
+
+    def as_join_touch(rows):
+        # the queue baseline always quotes the best price: its variants are join-touch at each queue assumption
+        out = []
+        for x in rows:
+            qm = _queue_of(x["variant"], 0.0 if x["variant"].startswith("bridge") else None)
+            out.append({**x, "variant": "join_touch", "queue_mult": qm, "scenario": _scenario(x["variant"], qm),
+                        "series": x["variant"]})
+        return out
+
+    for r in qb:
+        forest += as_join_touch(forest_rows(r["days"])); compare += as_join_touch(compare_rows(r["days"]))
+        add_curves(r, {d["variant"] for d in r["days"]}, r["days"])
+    for r in wf:
+        if r["config"].get("queue_mult") != HEADLINE_QUEUE:
+            continue
+        agent_days = [d for d in r["days"] if d["variant"] == "agent"]
+        forest += forest_rows(agent_days, queue_mult=HEADLINE_QUEUE)
+        compare += compare_rows(agent_days, queue_mult=HEADLINE_QUEUE)
+        gates = r.get("gates") or gates
+        add_curves(r, {"agent"}, agent_days)
+    dates_ = {d["date"] for r in qb for d in r["days"]}
+    coins = sorted({d["symbol"] for r in qb for d in r["days"]})
+    b = build_bundle(run_id, "walkforward", f"Verdict: {len(dates_)}-day queue-aware test, {len(coins)} coins",
+                     dict(qb[0]["config"]), [], built_utc=max(r["built_utc"] for r in runs),
+                     forest=forest, compare=compare, curves=curves, gross_curves=gross, gates=gates)
+    b["takeaways"] = takeaways(b)
+    return b
+
+
+def takeaways(b: dict) -> dict:
+    """One plain sentence per chart, written from the bundle's own numbers so it cannot go stale.
+    The page prints these and never composes a finding itself."""
+    out: dict = {}
+    forest = b.get("forest") or []
+    jt = [r for r in forest if r["symbol"] == "ALL" and r["variant"] == "join_touch" and "net_bp" in r]
+    if jt:
+        base = next((r for r in jt if r.get("queue_mult") == HEADLINE_QUEUE), jt[0])
+        coins = len({r["symbol"] for r in forest if r["variant"] == base["variant"] and r["symbol"] != "ALL"})
+        ts = f"t = {base['t']:.1f}, " if "t" in base else ""
+        text = (f"Always quoting the best price {'lost' if base['net_bp'] < 0 else 'made'} {abs(base['net_bp']):.1f} bp "
+                f"per dollar traded after fees ({ts}{base['n_days']} days, {coins} coins)")
+        ag = next((r for r in forest if r["symbol"] == "ALL" and r["variant"] == "agent"
+                   and r.get("queue_mult") == HEADLINE_QUEUE), None)
+        if ag is not None:
+            if ag["fills"] == 0:
+                text += f"; the self-calibrating agent made no fills in {ag['days_total']} days"
+            else:
+                text += f"; the self-calibrating agent made {ag['fills']:,} fills"
+                if "net_bp" in ag:
+                    text += f" and earned {ag['net_bp']:+.1f} bp"
+        out["headline"] = text + "."
+        lo, hi = min(jt, key=lambda r: r["net_bp"]), max(jt, key=lambda r: r["net_bp"])
+        if hi["net_bp"] < 0:
+            out["ov-forest"] = (f"Every assumption loses money after fees, from {hi['net_bp']:.1f} bp ({hi['scenario']}) "
+                                f"to {lo['net_bp']:.1f} bp ({lo['scenario']}); before fees the best case is "
+                                f"{max(r['gross_bp'] for r in jt):.1f} bp.")
+        else:
+            out["ov-forest"] = (f"{hi['scenario']} makes {hi['net_bp']:.1f} bp after fees; "
+                                f"{lo['scenario']} makes {lo['net_bp']:.1f} bp. Check the intervals before trusting either.")
+    cmp_ = next((r for r in (b.get("compare") or []) if r["symbol"] == "ALL" and r["variant"] == "join_touch"
+                 and r.get("queue_mult") == HEADLINE_QUEUE), None)
+    if cmp_ is not None and jt:
+        coins = len({r["symbol"] for r in forest if r["variant"] == "join_touch" and r["symbol"] != "ALL"})
+        out["ov-cum"] = (f"At queue {HEADLINE_QUEUE:g}x the {coins} coins together {'lost' if cmp_['pnl_total'] < 0 else 'made'} "
+                         f"{abs(cmp_['pnl_total']):,.0f} USD on 100 USD lots.")
+    gate = ((b.get("gates") or {}).get("A") or {}).get("conditions")
+    if gate:
+        met = sum(1 for c in gate if c.get("pass"))
+        out["ov-gates"] = (f"Gate A: {'pass' if ((b['gates']['A']).get('pass')) else 'fail'}; "
+                           f"{met} of {len(gate)} conditions met.")
+    return out
 
 
 # =============================================================================== demo bundle

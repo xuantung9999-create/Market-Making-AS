@@ -4,7 +4,7 @@
     python -m scripts.publish_dashboard --runs qb-2026-11-12,wf-2026-11-12-q1
 
 Writes dashboard_public/: the page, its scripts, data.js, and pub-<run_id>.js copies of the chosen
-runs with curves thinned to 30-minute points (demo runs are refused). The live strip never appears
+runs (by default every non-demo run, pub-verdict, and the newest recorded-book bundle) with curves thinned to 30-minute points (demo runs are refused). The live strip never appears
 on a published copy because it only runs when the page is served by the local server.
 """
 from __future__ import annotations
@@ -32,14 +32,20 @@ def main(argv=None) -> None:
     args = ap.parse_args(argv)
     idx_txt = (DASH / "runs" / "index.js").read_text(encoding="utf-8")
     index = json.loads(idx_txt[idx_txt.index("["): idx_txt.rindex("]") + 1])
-    wanted = args.runs.split(",") if args.runs else [r["run_id"] for r in index if r["kind"] != "demo" and not r["run_id"].startswith("pub-")]
+    if args.runs:
+        wanted = args.runs.split(",")
+    else:                                   # every non-demo run, the Verdict bundle, and only the newest book bundle
+        books = sorted(r["run_id"] for r in index if r["kind"] == "book")
+        wanted = [r["run_id"] for r in index if r["kind"] != "demo" and (r["kind"] != "book" or r["run_id"] == books[-1])]
     out = Path(args.out)
     if out.exists():
         shutil.rmtree(out)
     (out / "runs").mkdir(parents=True)
     shutil.copytree(DASH / "js", out / "js")
-    for f in ("index.html", "data.js"):
-        shutil.copy2(DASH / f, out / f)
+    shutil.copy2(DASH / "data.js", out / "data.js")
+    html = (DASH / "index.html").read_text(encoding="utf-8")   # flag the public copy: the Live tabs explain, not error
+    html = html.replace('<script src="data.js"></script>', '<script>window.PUBLIC_SITE = true;</script>\n<script src="data.js"></script>', 1)
+    (out / "index.html").write_text(html, encoding="utf-8")
     pub_index = []
     for rid in wanted:
         entry = next((r for r in index if r["run_id"] == rid), None)
