@@ -181,6 +181,7 @@ table.gates td:nth-child(2) { white-space: normal; font-family: var(--font-body)
 header { padding: 0 max(16px, 4vw); background: #0c131d; }
 .bar { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; min-height: 48px; }
 .brand { font: 600 15px var(--font-mono); letter-spacing: .06em; }
+.byline { margin: 0; font-size: 12px; color: var(--muted); } .byline strong { color: var(--text); font-weight: 500; } .byline a { text-decoration: none; }
 .bar-run { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
 .bar-run select { max-width: 280px; }
 .bar-verdict { margin: 0; flex: 1 1 320px; text-align: right; font: 500 13px var(--font-mono); color: var(--text); }
@@ -231,6 +232,7 @@ table.mini { font-size: 12px; } table.mini td { padding: 2px 8px; border: 0; }
 <header>
   <div class="bar">
     <div class="brand">MM-AS</div>
+    <p class="byline">by <strong>Nguyễn Xuân Tùng</strong> · <a href="https://github.com/xuantung9999-create/Market-Making-AS">Code</a> · <a href="https://www.linkedin.com/in/tungtea-nguyen">LinkedIn</a> · <a href="mailto:xuantung9702@gmail.com">Email</a> · <a href="https://t.me/Oooop1q">Telegram</a></p>
     <label class="bar-run">Run <select id="run-select"></select></label>
     <span id="run-badge"></span>
     <label class="bar-run">Symbol <select id="f-symbol"></select></label>
