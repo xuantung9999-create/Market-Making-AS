@@ -83,7 +83,7 @@ const TABS = {
 const viewIds = t => TABS[t].views.map(v => Array.isArray(v) ? v[0] : v);
 const VIEW_TAB = {};
 Object.keys(TABS).forEach(t => viewIds(t).forEach(v => { VIEW_TAB[v] = t; }));
-const DEFAULT_VIEW = { name: "overview" };
+const DEFAULT_VIEW = { name: window.PUBLIC_SITE ? "about" : "overview" };   // the public copy opens on About
 function register(name, fn, initiallyDirty = true) {
   if (!VIEWS.includes(name)) VIEWS.push(name);
   draw[name] = fn; dirty[name] = initiallyDirty;
